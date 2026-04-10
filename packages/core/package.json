@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "description": "Core store logic for Chronicle",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --watch"
