@@ -1,6 +1,6 @@
 {
   "name": "chronicle-dev",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "CLI for Chronicle — AI-native development memory",
   "type": "module",
   "bin": {
