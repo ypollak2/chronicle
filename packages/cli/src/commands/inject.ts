@@ -45,6 +45,14 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
     sections.push(...getRelevantDeepADRs(root, opts.files.split(',')))
   }
 
+  // Evolution — always include a compact version (first era summary only)
+  const evolution = readStore(root, 'evolution')
+  if (evolution) {
+    // Inject only the first era + header to keep token count low
+    const compact = evolution.split('---')[0]?.trim()
+    if (compact) sections.push(compact)
+  }
+
   // Most recent session
   const sessionsDir = lorePath(root, 'sessions')
   if (existsSync(sessionsDir)) {

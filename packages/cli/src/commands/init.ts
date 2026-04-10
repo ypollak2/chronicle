@@ -5,6 +5,7 @@ import { join } from 'path'
 import {
   findLoreRoot, initStore, lorePath, writeStore, appendToStore, writeDeepDecision,
   getCommits, extractFromCommits, createFileCache, parseExtractionResponse,
+  buildEvolution, renderEvolutionMarkdown,
   type ScanDepth, type ExtractionResult
 } from '@chronicle/core'
 import { makeLLMProvider } from '../llm.js'
@@ -57,6 +58,13 @@ export async function cmdInit(opts: { depth: string; llm: string }) {
   // Phase 4: write to store
   spinner.text = 'Writing knowledge base...'
   buildStore(cwd, results)
+
+  // Phase 5: build evolution record from git tags
+  spinner.text = 'Building evolution record...'
+  const eras = buildEvolution(cwd)
+  if (eras.length > 0) {
+    writeStore(cwd, 'evolution', renderEvolutionMarkdown(eras))
+  }
 
   spinner.succeed(chalk.green(`Done! .lore/ initialized from ${commits.length} commits`))
 

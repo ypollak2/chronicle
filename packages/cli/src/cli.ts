@@ -6,6 +6,9 @@ import { cmdDeepen } from './commands/deepen.js'
 import { cmdHooksInstall, cmdHooksRemove, cmdCapture, cmdEnrichCommit } from './commands/hooks.js'
 import { cmdSetup } from './commands/setup.js'
 import { cmdDiagram } from './commands/diagram.js'
+import { cmdEvolution } from './commands/evolution.js'
+import { findLoreRoot } from '@chronicle/core'
+import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
 const program = new Command()
 
@@ -43,6 +46,13 @@ program
   .action(cmdSetup)
 
 program
+  .command('evolution')
+  .description('Build or view the system evolution record (.lore/evolution.md)')
+  .option('--regen', 'force regenerate even if evolution.md already exists')
+  .option('--view', 'print current evolution record to stdout')
+  .action(cmdEvolution)
+
+program
   .command('diagram')
   .description('Generate ASCII diagrams from .lore/ store')
   .option('--type <type>', 'architecture|dependencies|evolution (default: all)')
@@ -62,5 +72,26 @@ program
 program
   .command('enrich-commit <msgFile>', { hidden: true })
   .action((msgFile) => cmdEnrichCommit({ msgFile }))
+
+// Status bar: show before/after for write commands (not inject/mcp/internal)
+const WRITE_COMMANDS = new Set(['init', 'deepen', 'capture', 'setup', 'diagram', 'evolution'])
+
+program.hook('preAction', (thisCommand) => {
+  const name = thisCommand.name()
+  if (!WRITE_COMMANDS.has(name)) return
+  const root = findLoreRoot()
+  if (!root) return
+  ;(thisCommand as any)._chronicleStats = getStoreStats(root)
+  printStatusBefore(root, name)
+})
+
+program.hook('postAction', (thisCommand) => {
+  const name = thisCommand.name()
+  if (!WRITE_COMMANDS.has(name)) return
+  const root = findLoreRoot()
+  const before = (thisCommand as any)._chronicleStats
+  if (!root || !before) return
+  printStatusAfter(root, before)
+})
 
 program.parse()

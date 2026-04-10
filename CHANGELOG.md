@@ -6,6 +6,29 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2025-04-10
+
+### Added
+
+**Evolution Records (`chronicle evolution`)**
+- `buildEvolution()` — groups git history into eras (one per release tag + current untagged work)
+- Each era contains: decisions made, rejections logged, most-changed files, date range
+- `renderEvolutionMarkdown()` — renders eras to human+AI-readable `.lore/evolution.md`
+- `mergeWithExisting()` — preserves manually-written `> summary` fields when regenerating
+- `chronicle evolution --regen` — force-rebuild; `--view` — print to stdout
+- Auto-generates `evolution.md` at the end of `chronicle init`
+- Evolution included in `chronicle inject` output (first era, compact)
+
+**Terminal Status Indicator**
+- Before every write command: `◆ chronicle │ N decisions · N rejected · N ADRs · last capture: Xm ago`
+- After every write command: `◆ chronicle wrote +N decisions, +N rejections` (only if something changed)
+- Written to stderr — doesn't pollute `chronicle inject` stdout pipe
+- Active for: `init`, `deepen`, `setup`, `diagram`, `evolution`, `capture`
+
+**Tests**
+- 12 evolution tests: tag detection, era chaining, HEAD detection, rendering, merge behavior
+- Total: 62 tests passing (56 TS + 6 Python)
+
 ## [0.2.0] — 2025-04-10
 
 ### Added
