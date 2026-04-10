@@ -23,15 +23,19 @@ describe('adapters', () => {
     it('creates .claude/mcp.json with chronicle server', () => {
       installAdapter(root, 'claude-code')
       const mcp = JSON.parse(readFileSync(join(root, '.claude', 'mcp.json'), 'utf8'))
-      expect(mcp.servers.chronicle).toBeDefined()
-      expect(mcp.servers.chronicle.command).toBe('chronicle')
+      // Support both old (servers) and new (mcpServers) key
+      const srv = mcp.mcpServers?.chronicle ?? mcp.servers?.chronicle
+      expect(srv).toBeDefined()
+      expect(srv.command).toBe('chronicle')
     })
 
     it('creates .claude/settings.json with hooks', () => {
       installAdapter(root, 'claude-code')
       const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'))
-      expect(settings.hooks.SessionStart).toContain('chronicle inject')
-      expect(settings.hooks.Stop).toContain('chronicle capture')
+      expect(settings.hooks).toBeDefined()
+      // SessionStart is now an array of hook objects
+      const sessionStart = JSON.stringify(settings.hooks.SessionStart)
+      expect(sessionStart).toContain('chronicle inject')
     })
 
     it('merges with existing settings.json without overwriting other keys', () => {

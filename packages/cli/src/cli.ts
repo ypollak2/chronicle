@@ -10,6 +10,7 @@ import { cmdDoctor } from './commands/doctor.js'
 import { cmdSearch } from './commands/search.js'
 import { cmdServe } from './commands/serve.js'
 import { cmdSession } from './commands/session.js'
+import { cmdMcp } from './commands/mcp.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -88,6 +89,11 @@ const session = program.command('session').description('Manage session notes in 
 session.command('save [message]').description('Save a session note with optional message').action((msg) => cmdSession({ action: 'save', message: msg }))
 session.command('list').description('List saved session notes').action(() => cmdSession({ action: 'list' }))
 session.command('show [n]').description('Show last N session notes (default: 1)').action((n) => cmdSession({ action: 'show', n }))
+
+program
+  .command('mcp')
+  .description('Start the MCP server for Claude Code integration (stdio transport)')
+  .action(cmdMcp)
 
 const hooks = program.command('hooks').description('Manage git hooks')
 hooks.command('install').description('Install post-commit and prepare-commit-msg hooks').action(cmdHooksInstall)

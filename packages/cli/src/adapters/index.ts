@@ -45,30 +45,35 @@ function adapterClaudeCode(root: string): AdapterResult {
   const claudeDir = join(root, '.claude')
   mkdirSync(claudeDir, { recursive: true })
 
-  // MCP config
+  // Claude Code MCP config — .claude/mcp.json (project-scoped)
   const mcpPath = join(claudeDir, 'mcp.json')
   const mcp = existsSync(mcpPath)
     ? JSON.parse(readFileSync(mcpPath, 'utf8'))
-    : { servers: {} }
-  mcp.servers.chronicle = { command: 'chronicle', args: ['mcp'] }
+    : { mcpServers: {} }
+  // Support both old (servers) and new (mcpServers) format
+  const key = mcp.mcpServers !== undefined ? 'mcpServers' : 'servers'
+  mcp[key] = mcp[key] ?? {}
+  mcp[key].chronicle = { command: 'chronicle', args: ['mcp'] }
   writeFileSync(mcpPath, JSON.stringify(mcp, null, 2))
 
-  // Hooks config — merge with existing settings.json if present
+  // Hooks — merge with existing settings.json
   const settingsPath = join(claudeDir, 'settings.json')
   const settings = existsSync(settingsPath)
     ? JSON.parse(readFileSync(settingsPath, 'utf8'))
     : {}
   settings.hooks = {
     ...settings.hooks,
-    SessionStart: 'chronicle inject --format=markdown 2>/dev/null || true',
-    Stop: 'chronicle capture --from-commit HEAD 2>/dev/null || true',
+    SessionStart: [
+      ...(settings.hooks?.SessionStart ?? []),
+      { matcher: '', hooks: [{ type: 'command', command: 'chronicle inject --format=markdown 2>/dev/null || true' }] },
+    ],
   }
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
 
   return {
     tool: 'claude-code',
     filesWritten: [mcpPath, settingsPath],
-    instructions: `MCP server + hooks installed.\nChronicle tools auto-inject context on session start and capture decisions on stop.`,
+    instructions: `MCP server + hooks installed. Run \`claude mcp list\` to verify chronicle is registered.`,
   }
 }
 
