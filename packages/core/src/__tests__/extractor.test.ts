@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   parseExtractionResponse, buildExtractionPrompt, extractFromCommits,
+  extractFilesFromDiff, clusterCommitsByFileOverlap,
   type CommitMeta, type ExtractionResult, type ExtractionCache
 } from '../extractor.js'
 
@@ -106,10 +107,10 @@ describe('extractFromCommits', () => {
     expect(mockLLM).toHaveBeenCalledTimes(3)
   })
 
-  it('throws for unimplemented strategies', async () => {
-    await expect(
-      extractFromCommits([stubCommit()], mockLLM, { strategy: 'clustered' })
-    ).rejects.toThrow('v2 roadmap')
+  it('clustered strategy no longer throws — it groups by file overlap', async () => {
+    mockLLM.mockResolvedValue(JSON.stringify([stubResult()]))
+    const results = await extractFromCommits([stubCommit()], mockLLM, { strategy: 'clustered' })
+    expect(results).toHaveLength(1)
   })
 
   it('stores results in cache after processing', async () => {
@@ -122,5 +123,86 @@ describe('extractFromCommits', () => {
     mockLLM.mockResolvedValueOnce(JSON.stringify([stubResult()]))
     await extractFromCommits([stubCommit()], mockLLM, { cache })
     expect(stored['abc1234']).toBeDefined()
+  })
+})
+
+// ── v2: Semantic clustering ────────────────────────────────────────────────────
+
+const authDiff = (extra = '') =>
+  `diff --git a/auth/index.ts b/auth/index.ts\nindex 0000..1111\n--- a/auth/index.ts\n+++ b/auth/index.ts\n${extra}+const x = 1\n`.repeat(3)
+
+const dbDiff = (extra = '') =>
+  `diff --git a/db/schema.ts b/db/schema.ts\nindex 0000..2222\n--- a/db/schema.ts\n+++ b/db/schema.ts\n${extra}+const y = 2\n`.repeat(3)
+
+describe('extractFilesFromDiff', () => {
+  it('extracts file paths from diff --git headers', () => {
+    const files = extractFilesFromDiff(authDiff())
+    expect(files.has('auth/index.ts')).toBe(true)
+  })
+
+  it('returns empty set for commits with no diff headers', () => {
+    expect(extractFilesFromDiff('+const x = 1\n')).toEqual(new Set())
+  })
+
+  it('handles multiple files in one diff', () => {
+    const multi = authDiff() + dbDiff()
+    const files = extractFilesFromDiff(multi)
+    expect(files.has('auth/index.ts')).toBe(true)
+    expect(files.has('db/schema.ts')).toBe(true)
+  })
+})
+
+describe('clusterCommitsByFileOverlap', () => {
+  it('groups commits that share files into the same cluster', () => {
+    const commits = [
+      stubCommit({ hash: 'a1', diff: authDiff() }),
+      stubCommit({ hash: 'a2', diff: authDiff() }),  // same file → same cluster
+      stubCommit({ hash: 'd1', diff: dbDiff() }),     // different file → new cluster
+    ]
+    const clusters = clusterCommitsByFileOverlap(commits)
+    expect(clusters[0].map(c => c.hash)).toContain('a1')
+    expect(clusters[0].map(c => c.hash)).toContain('a2')
+    expect(clusters.some(cl => cl.some(c => c.hash === 'd1'))).toBe(true)
+    // auth commits and db commit should NOT be in the same cluster
+    const authCluster = clusters.find(cl => cl.some(c => c.hash === 'a1'))!
+    expect(authCluster.some(c => c.hash === 'd1')).toBe(false)
+  })
+
+  it('returns empty array for empty input', () => {
+    expect(clusterCommitsByFileOverlap([])).toEqual([])
+  })
+
+  it('handles commits with no parseable diff files (falls back to singleton merging)', () => {
+    const commits = Array.from({ length: 5 }, (_, i) =>
+      stubCommit({ hash: `h${i}`, diff: '+no diff headers\n'.repeat(5) })
+    )
+    const clusters = clusterCommitsByFileOverlap(commits)
+    // All 5 are singletons → should be merged into one batch
+    const totalCommits = clusters.reduce((sum, cl) => sum + cl.length, 0)
+    expect(totalCommits).toBe(5)
+    // And they should be in fewer clusters than the original 5 commits
+    expect(clusters.length).toBeLessThan(5)
+  })
+
+  it('respects MAX_CLUSTER_SIZE — does not exceed 8 commits per cluster', () => {
+    // 10 commits all touching the same file
+    const commits = Array.from({ length: 10 }, (_, i) =>
+      stubCommit({ hash: `h${i}`, diff: authDiff() })
+    )
+    const clusters = clusterCommitsByFileOverlap(commits)
+    for (const cl of clusters) {
+      expect(cl.length).toBeLessThanOrEqual(8)
+    }
+  })
+
+  it('produces fewer LLM calls than simple batching when commits are related', async () => {
+    const mockLLM = vi.fn().mockResolvedValue(JSON.stringify([stubResult()]))
+    // 12 commits all touching auth/ — clustered should produce 2 calls (8+4), simple produces 2 calls (6+6) but clusters are tighter
+    const commits = Array.from({ length: 12 }, (_, i) =>
+      stubCommit({ hash: `h${i}`, diff: authDiff() })
+    )
+    await extractFromCommits(commits, mockLLM, { strategy: 'clustered' })
+    // All 12 share auth/ → 2 clusters of 8 and 4 → 2 LLM calls
+    expect(mockLLM).toHaveBeenCalledTimes(2)
   })
 })

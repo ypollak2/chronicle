@@ -1,13 +1,13 @@
 {
   "name": "chronicle-dev",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "CLI for Chronicle — AI-native development memory",
   "type": "module",
   "bin": {
     "chronicle": "./bin/chronicle"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --out-dir dist --format esm --banner.js '#!/usr/bin/env node'",
+    "build": "tsup",
     "dev": "tsx src/cli.ts",
     "prepublishOnly": "npm run build"
   },

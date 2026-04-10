@@ -6,6 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-04-10
+
+### Added
+
+**Semantic Clustering Extraction (`strategy: 'clustered'`)**
+- `extractFilesFromDiff()` — parses `diff --git a/X b/X` headers to extract the file set touched by a commit
+- `clusterCommitsByFileOverlap()` — groups commits into cohesive clusters where all members share at least one touched file
+- Isolated commits (no file overlap with neighbours) are batched together up to 4 per group to avoid excessive LLM calls
+- Clusters respect `MAX_CLUSTER_SIZE=8` and `MAX_CLUSTER_CHARS=8000` to stay within LLM context limits
+- `strategyClustered()` — runs one LLM call per semantic cluster instead of per fixed-size batch
+- Pass `{ strategy: 'clustered' }` to `extractFromCommits()` to use the new strategy
+
+**Why it matters**: The v1 `simple` strategy could batch "add JWT auth" with unrelated CSS tweaks. The `clustered` strategy ensures the LLM sees a coherent feature narrative — all commits that touched `auth/` together — yielding richer rationale extraction.
+
+**Tests**
+- 8 new clustering tests: file parsing, overlap detection, singleton merging, MAX_CLUSTER_SIZE cap, LLM call count
+- Total: 64 tests passing (58 TS + 6 Python)
+
+---
+
 ## [0.3.0] — 2025-04-10
 
 ### Added
@@ -61,10 +81,6 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Phase 4: Tool adapters (Cursor `.cursorrules`, Aider `--read`, Gemini `GEMINI.md`, Copilot instructions)
-- Phase 5: Mermaid diagram auto-generation (architecture, dependency graph, evolution timeline)
-- Phase 6: Evolution records and system milestone timeline
-- Phase 7 (v2): Semantic clustering extraction strategy (group commits by file overlap + time proximity)
 - Phase 8 (v3): Two-pass extraction (cheap LLM filter → quality model for complex decisions)
 
 ---

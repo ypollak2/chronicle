@@ -61,7 +61,7 @@ export type ExtractionStrategy = 'simple' | 'clustered' | 'two-pass'
 
 // Entry point — strategy is swappable without changing callers
 // v1: simple fixed batching (cached by SHA, good enough for bootstrap)
-// v2: semantic clustering by file overlap + time proximity (planned)
+// v2: semantic clustering by file overlap (ships in v0.4.0)
 // v3: two-pass cheap filter + quality model for complex decisions (planned)
 export async function extractFromCommits(
   commits: CommitMeta[],
@@ -74,11 +74,108 @@ export async function extractFromCommits(
   let results: ExtractionResult[]
   switch (strategy) {
     case 'simple':    results = await strategySimple(uncached, llm); break
-    case 'clustered': throw new Error('clustered strategy not yet implemented (v2 roadmap)')
+    case 'clustered': results = await strategyClustered(uncached, llm); break
     case 'two-pass':  throw new Error('two-pass strategy not yet implemented (v3 roadmap)')
   }
 
   if (cache) results.forEach((r, i) => cache.set(uncached[i].hash, r))
+  return results
+}
+
+// ── v2: Semantic clustering ────────────────────────────────────────────────────
+
+const MAX_CLUSTER_SIZE  = 8
+const MAX_CLUSTER_CHARS = 8000
+const SINGLETON_BATCH   = 4  // merge isolated commits into groups of this size
+
+// Parse the set of files touched by a commit from its diff content
+export function extractFilesFromDiff(diff: string): Set<string> {
+  const files = new Set<string>()
+  for (const match of diff.matchAll(/^diff --git a\/.+? b\/(.+)$/gm)) {
+    files.add(match[1])
+  }
+  return files
+}
+
+// Group commits into clusters where members share at least one touched file.
+// Isolated commits (no file overlap with neighbours) are batched together up to SINGLETON_BATCH.
+export function clusterCommitsByFileOverlap(commits: CommitMeta[]): CommitMeta[][] {
+  if (commits.length === 0) return []
+
+  const fileMap = new Map<string, Set<string>>(
+    commits.map(c => [c.hash, extractFilesFromDiff(c.diff)])
+  )
+
+  const assigned = new Set<string>()
+  const cohesive: CommitMeta[][] = []   // clusters with ≥1 shared file
+  const singletons: CommitMeta[] = []   // commits with no overlap found
+
+  for (let i = 0; i < commits.length; i++) {
+    const seed = commits[i]
+    if (assigned.has(seed.hash)) continue
+
+    const cluster: CommitMeta[] = [seed]
+    const clusterFiles = new Set(fileMap.get(seed.hash))
+    let clusterChars = seed.diff.length
+    assigned.add(seed.hash)
+
+    // Greedily absorb later commits that overlap this cluster's file set
+    for (let j = i + 1; j < commits.length && cluster.length < MAX_CLUSTER_SIZE; j++) {
+      const c = commits[j]
+      if (assigned.has(c.hash)) continue
+      if (clusterChars + c.diff.length > MAX_CLUSTER_CHARS) continue
+      const files = fileMap.get(c.hash)!
+      if ([...files].some(f => clusterFiles.has(f))) {
+        cluster.push(c)
+        files.forEach(f => clusterFiles.add(f))
+        clusterChars += c.diff.length
+        assigned.add(c.hash)
+      }
+    }
+
+    if (cluster.length > 1) {
+      cohesive.push(cluster)
+    } else {
+      singletons.push(seed)
+    }
+  }
+
+  // Merge singletons into small batches to avoid excessive LLM calls
+  const merged = mergeSingletonBatches(singletons)
+
+  // Interleave cohesive clusters and singleton batches preserving rough order
+  return [...cohesive, ...merged].sort((a, b) => {
+    const aIdx = commits.indexOf(a[0])
+    const bIdx = commits.indexOf(b[0])
+    return aIdx - bIdx
+  })
+}
+
+function mergeSingletonBatches(commits: CommitMeta[]): CommitMeta[][] {
+  const batches: CommitMeta[][] = []
+  let batch: CommitMeta[] = []
+  let batchChars = 0
+
+  for (const c of commits) {
+    if (batch.length >= SINGLETON_BATCH || batchChars + c.diff.length > MAX_CLUSTER_CHARS) {
+      batches.push(batch)
+      batch = []
+      batchChars = 0
+    }
+    batch.push(c)
+    batchChars += c.diff.length
+  }
+  if (batch.length > 0) batches.push(batch)
+  return batches
+}
+
+async function strategyClustered(commits: CommitMeta[], llm: LLMProvider): Promise<ExtractionResult[]> {
+  const clusters = clusterCommitsByFileOverlap(commits)
+  const results: ExtractionResult[] = []
+  for (const cluster of clusters) {
+    const raw = await llm(buildExtractionPrompt(cluster))
+    results.push(...parseExtractionResponse(raw))
+  }
   return results
 }
 
