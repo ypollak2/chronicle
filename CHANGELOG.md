@@ -6,6 +6,35 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.0] — 2025-04-10
+
+### Added
+
+**Tool adapters (`chronicle setup --tool=<name>`)**
+- `claude-code` / `openclaw` — MCP server config (`.claude/mcp.json`) + SessionStart/Stop hooks (`.claude/settings.json`); merges with existing config
+- `cursor` — generates `.cursorrules` with current `.lore/` context
+- `aider` — writes `.aider.conf.yml` with `--read` entries for `.lore/` files; idempotent
+- `gemini-cli` — generates `GEMINI.md` with compressed context
+- `copilot` — generates `.github/copilot-instructions.md`
+- `codex` — appends Chronicle context to `AGENTS.md`
+- `opencode` — writes `.opencode.json` with `contextFiles` entries
+- `trae` / `factory` — universal pipe instructions (`chronicle inject | <tool>`)
+- `chronicle setup` with no args lists all available integrations
+- `chronicle setup --all` installs every adapter at once
+
+**ASCII Diagrams (`chronicle diagram`)**
+- All diagrams are plain `.txt` files — render anywhere (terminal, GitHub, AI context windows)
+- `architecture.txt` — module tree grouped by directory, relationships from decision log
+- `dependencies.txt` — import graph from source files; highlights high-blast-radius files (≥3 dependents)
+- `evolution.txt` — timeline from git tags + dated decision entries, grouped by year
+
+**Tests**
+- 11 adapter tests covering install, idempotency, merge behavior, pipe tools
+- Total: 50 tests passing (44 TS + 6 Python)
+
+### Changed
+- Diagram files use `.txt` extension instead of `.mmd` — ASCII format, no renderer needed
+
 ## [Unreleased]
 
 ### Planned
