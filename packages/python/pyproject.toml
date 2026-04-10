@@ -19,8 +19,11 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# No Python dependencies — Node does all the work
+# No runtime dependencies — Node does all the work
 dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
 
 [project.scripts]
 chronicle = "chronicle._cli:main"

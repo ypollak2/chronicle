@@ -2,95 +2,193 @@
 
 > AI-native development memory — markdown RAG for every AI coding tool
 
-Chronicle builds a living knowledge base inside your repo. It scans your git history, captures architectural decisions as you work, and injects compressed context into any AI coding tool — Claude Code, Codex, Cursor, Gemini CLI, Aider, and more.
+[![CI](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml/badge.svg)](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/chronicle-dev)](https://www.npmjs.com/package/chronicle-dev)
+[![PyPI](https://img.shields.io/pypi/v/chronicle-dev)](https://pypi.org/project/chronicle-dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**No vector database. No embeddings. Just markdown.**
+Chronicle builds a living knowledge base inside your repo. It scans your git history, captures architectural decisions as you work, and injects compressed context into any AI coding tool — without a vector database, without embeddings, without infrastructure.
+
+**Just markdown files.**
+
+---
 
 ## Why
 
-Code shows what exists. It doesn't show what was tried and rejected, why an approach was chosen, or what a future AI session needs to know. Chronicle captures the invisible layer.
+Code shows what *exists*. It doesn't show:
+- What was **tried and rejected** (and why)
+- Why a particular approach was **chosen over alternatives**
+- What context a future AI session **needs to not repeat past mistakes**
 
-```
-# What code looks like to an AI with Chronicle:
+Chronicle captures the invisible layer.
 
+```markdown
 ## Rejected: Prisma ORM — 2025-03-10
-Replaced by raw `pg` queries. Type conflicts with existing Zod schemas caused
-3 broken integration tests. Do not reintroduce until validation layer is unified.
+Replaced by raw `pg` queries. Type conflicts with Zod schemas caused
+3 broken integration tests. Do not reintroduce.
 
-## Decision: JWT over sessions — 2025-04-08 [high risk]
+## Decision: JWT over sessions — 2025-04-08 [risk: high]
 Affects: auth/, api/middleware.ts
-OAuth vendor integration blocked until Q3. JWT allows stateless scaling.
+OAuth vendor blocked until Q3. JWT allows stateless scaling.
 ```
+
+In ~200 tokens, your next AI session knows what took you days to learn.
+
+---
 
 ## Install
 
 ```bash
+# npm
 npm install -g chronicle-dev
+
+# pip
+pip install chronicle-dev
 ```
+
+**Requires Node.js ≥ 20.**
+
+---
 
 ## Quick Start
 
 ```bash
-# In any git repo
-chronicle init                    # scans last 6 months of history
-chronicle inject | claude         # pipe context into Claude
-chronicle inject | codex          # or Codex
-chronicle hooks install           # passive capture on every commit
+# Bootstrap from the last 6 months of git history
+chronicle init
+
+# Pipe context into any AI tool
+chronicle inject | claude
+chronicle inject | codex
+chronicle inject | aider
+
+# Install passive capture (runs after every git commit)
+chronicle hooks install
+
+# Scan further back when you're ready
+chronicle deepen --depth=1year
 ```
 
-## Commands
+---
 
-| Command | Description |
-|---------|-------------|
-| `chronicle init [--depth=6months\|1year\|all]` | Bootstrap from git history |
-| `chronicle inject [--files=src/auth/]` | Output compressed context |
-| `chronicle deepen [--depth=1year\|all]` | Extend scan further back |
-| `chronicle hooks install` | Install git hooks for passive capture |
-| `chronicle hooks remove` | Remove hooks |
-| `chronicle mcp` | Start MCP server for Claude Code |
+## How It Works
 
-## Works With
+### 1. Bootstrap (one-time)
 
-| Tool | Integration |
-|------|-------------|
-| Claude Code | MCP server + hooks (native) |
-| Codex | `chronicle inject \| codex` |
-| Cursor | `.cursorrules` auto-generated |
-| Gemini CLI | `GEMINI.md` auto-generated |
-| GitHub Copilot | `.github/copilot-instructions.md` |
-| Aider | `--read .lore/index.md` |
-| Any tool | `chronicle inject` → stdout pipe |
+`chronicle init` scans your git history, filters noise (chore/style/docs commits, tiny diffs), and sends meaningful commits in batches to a cheap LLM (Haiku/Flash/GPT-4o-mini). Extraction results are cached by commit SHA — re-running is free.
+
+### 2. Capture (ongoing)
+
+A `post-commit` git hook fires asynchronously after every commit. It processes only the new commit, checks the cache, and appends to your `.lore/` store. Zero latency on your workflow.
+
+### 3. Inject (per session)
+
+`chronicle inject` reads your `.lore/` store and outputs compressed context. Scope it to specific files for precision, or pipe the full context for cross-cutting tasks.
+
+```bash
+chronicle inject --files=src/auth/     # scoped: only auth-relevant context
+chronicle inject --full                # everything including deep ADRs
+chronicle inject --format=xml          # XML format for Claude system prompts
+```
+
+---
 
 ## The `.lore/` Store
 
 ```
 .lore/
-├── index.md          # Project summary + key constraints
-├── decisions.md      # Lightweight index of all decisions
-├── decisions/        # Deep ADR files for complex decisions
-├── rejected.md       # What was tried and why it failed ← crown jewel
-├── risks.md          # High-blast-radius files
-├── evolution.md      # System milestones timeline
-├── diagrams/         # Auto-generated Mermaid diagrams
-└── sessions/         # Per-session AI summaries
+├── index.md          Project summary + constraints
+├── decisions.md      Lightweight index of all decisions
+├── decisions/        Deep ADR files for complex decisions
+├── rejected.md       What was tried and failed ← most valuable
+├── risks.md          High-blast-radius files
+├── evolution.md      System timeline
+├── diagrams/         Mermaid diagrams (auto-generated)
+└── sessions/         Per-session AI summaries
 ```
+
+Commit `.lore/` to git. It's the institutional memory of your codebase.
+
+---
+
+## Works With Every AI Tool
+
+| Tool | Integration |
+|------|-------------|
+| **Claude Code** | MCP server + auto-inject hooks (native) |
+| **Codex** | `chronicle inject \| codex` |
+| **Cursor** | `.cursorrules` auto-generated |
+| **Gemini CLI** | `GEMINI.md` auto-generated |
+| **GitHub Copilot** | `.github/copilot-instructions.md` |
+| **Aider** | `chronicle inject \| aider` or `--read .lore/` |
+| **OpenCode / Trae / Factory** | `chronicle inject` stdout pipe |
+| **Any tool** | `chronicle inject` → stdout |
+
+---
 
 ## Claude Code Setup
 
-See [CLAUDE_CODE_SETUP.md](./CLAUDE_CODE_SETUP.md) for MCP + hooks configuration.
+Add to `.claude/mcp.json`:
 
-## Roadmap
+```json
+{
+  "servers": {
+    "chronicle": { "command": "chronicle", "args": ["mcp"] }
+  }
+}
+```
 
-- [x] Phase 0: git history bootstrap with progressive depth
-- [x] Phase 1: core CLI (init, inject, deepen)
-- [x] Phase 2: git hooks (passive capture)
-- [x] Phase 3: MCP server (Claude Code native)
-- [ ] Phase 4: tool adapters (Cursor, Aider, Gemini, Copilot)
-- [ ] Phase 5: Mermaid diagram generation
-- [ ] Phase 6: evolution records + timeline
-- [ ] Phase 7 (v2): semantic clustering extraction strategy
-- [ ] Phase 8 (v3): two-pass extraction (cheap filter + quality model)
+Add to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": "chronicle inject --format=markdown 2>/dev/null || true",
+    "Stop": "chronicle capture --from-commit HEAD 2>/dev/null || true"
+  }
+}
+```
+
+Chronicle tools Claude calls automatically:
+- `chronicle_log_decision` — when making architectural choices
+- `chronicle_log_rejection` — when abandoning an approach
+- `chronicle_get_risks` — before touching high-blast-radius files
+- `chronicle_save_session` — at session end
+
+---
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `chronicle init [--depth=6months\|1year\|all] [--llm=anthropic\|openai\|gemini]` | Bootstrap from git history |
+| `chronicle inject [--files=<paths>] [--full] [--format=markdown\|xml\|plain]` | Output context to stdout |
+| `chronicle deepen [--depth=1year\|all]` | Extend scan without reprocessing |
+| `chronicle hooks install` | Install git hooks |
+| `chronicle hooks remove` | Remove git hooks |
+| `chronicle mcp` | Start MCP server for Claude Code |
+
+---
+
+## Architecture
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system design, data flows, and extension points.
+
+---
+
+## Contributing
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history and roadmap.
+
+```bash
+git clone https://github.com/ypollak2/chronicle
+cd chronicle
+npm install
+npm test           # run all tests
+npm run build      # build all packages
+```
+
+---
 
 ## License
 
-MIT
+MIT © [ypollak2](https://github.com/ypollak2)

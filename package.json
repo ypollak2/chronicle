@@ -7,9 +7,14 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w packages/core && npm run build -w packages/cli",
     "dev": "npm run dev -w packages/cli",
-    "test": "npm test --workspaces"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:python": "cd packages/python && .venv/bin/pytest tests/ -v",
+    "test:all": "npm test && npm run test:python",
+    "release": "npm run test:all && npm run build"
   },
   "engines": {
     "node": ">=20"

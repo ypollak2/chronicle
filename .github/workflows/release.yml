@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Run all tests (gate — release blocked if any fail)
+        run: npm test
+
+      - name: Run Python tests
+        run: |
+          cd packages/python
+          python -m venv .venv
+          .venv/bin/pip install pytest --quiet
+          npm run test:python
+
+      - name: Publish to npm
+        run: npm publish -w packages/cli --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Build Python wheel
+        run: |
+          cd packages/python
+          .venv/bin/pip install hatchling twine --quiet
+          .venv/bin/python -m hatchling build
+
+      - name: Publish to PyPI
+        run: |
+          cd packages/python
+          .venv/bin/twine upload dist/* --non-interactive
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          files: |
+            packages/python/dist/*.whl
+            packages/python/dist/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

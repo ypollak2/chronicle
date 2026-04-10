@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Run TypeScript tests
+        run: npm test
+
+      - name: Install Python test dependencies
+        run: |
+          cd packages/python
+          python -m venv .venv
+          .venv/bin/pip install -e ".[dev]" --quiet 2>/dev/null || .venv/bin/pip install pytest --quiet
+
+      - name: Run Python tests
+        run: npm run test:python
