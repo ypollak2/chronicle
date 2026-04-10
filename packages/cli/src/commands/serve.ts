@@ -82,6 +82,8 @@ function renderIndex(root: string, loreDir: string): string {
   const decisions = readStore(root, 'decisions')
   const rejected = readStore(root, 'rejected')
   const evolution = readStore(root, 'evolution')
+  const index = readStore(root, 'index')
+  const projectName = root.split('/').pop() ?? 'project'
 
   const adrDir = join(loreDir, 'decisions')
   const adrs = existsSync(adrDir)
@@ -91,10 +93,15 @@ function renderIndex(root: string, loreDir: string): string {
       }))
     : []
 
-  return html(`Chronicle — ${root.split('/').pop()}`, `
+  // Parse quick stats from decisions
+  const decCount = (decisions?.match(/^\|/gm) ?? []).length - 2  // subtract header rows
+  const rejCount = (rejected?.match(/^## .+ — rejected/gm) ?? []).length
+
+  return html(`Chronicle — ${projectName}`, `
     <div class="sidebar">
-      <h2>📚 Knowledge Base</h2>
+      <h2>📚 ${projectName}</h2>
       <nav>
+        <a href="/" class="active">Overview</a>
         <a href="/file/decisions.md">Decision Log</a>
         <a href="/file/rejected.md">Rejected Ideas</a>
         <a href="/file/evolution.md">System Evolution</a>
@@ -109,7 +116,17 @@ function renderIndex(root: string, loreDir: string): string {
         <div id="results"></div>
       </div>
       <div class="content">
-        ${mdToHtml(decisions)}
+        <div class="overview">
+          <div class="overview-stats">
+            <div class="stat-card"><div class="stat-num">${Math.max(0, decCount)}</div><div class="stat-label">Decisions</div></div>
+            <div class="stat-card"><div class="stat-num">${rejCount}</div><div class="stat-label">Rejected Ideas</div></div>
+            <div class="stat-card"><div class="stat-num">${adrs.length}</div><div class="stat-label">Deep ADRs</div></div>
+            <div class="stat-card stat-card-link" onclick="location='/graph'"><div class="stat-num">◆</div><div class="stat-label">Graph View</div></div>
+          </div>
+          ${index ? `<div class="overview-section"><h2>Project Index</h2>${mdToHtml(index)}</div>` : ''}
+          ${evolution ? `<div class="overview-section"><h2>Evolution</h2>${mdToHtml(evolution.split('\n').slice(0, 30).join('\n'))}${evolution.split('\n').length > 30 ? `<p><a href="/file/evolution.md">Read full evolution →</a></p>` : ''}</div>` : ''}
+          <div class="overview-section"><h2>Recent Decisions</h2>${mdToHtml(decisions)}</div>
+        </div>
       </div>
     </div>
     <script>
@@ -198,6 +215,18 @@ function html(title: string, body: string): string {
   .content li { margin-bottom: 4px }
   strong { color: #e6edf3 }
   em { color: #a5d6ff }
+  .sidebar nav a.active { background: #21262d; color: #e6edf3 }
+  .overview-stats { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap }
+  .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+               padding: 16px 20px; min-width: 100px; text-align: center }
+  .stat-card-link { cursor: pointer; transition: border-color .15s }
+  .stat-card-link:hover { border-color: #58a6ff }
+  .stat-num { font-size: 28px; font-weight: 700; color: #e6edf3; line-height: 1 }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px }
+  .overview-section { margin-bottom: 32px }
+  .overview-section h2 { font-size: 15px; color: #8b949e; text-transform: uppercase;
+                         letter-spacing: .06em; margin-bottom: 12px; padding-bottom: 6px;
+                         border-bottom: 1px solid #30363d }
 </style>
 </head><body>${body}</body></html>`
 }
@@ -239,7 +268,11 @@ function renderInline(text: string): string {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+      // Rewrite relative .md links to /file/ so the server handles them
+      const resolved = href.startsWith('http') ? href : `/file/${href}`
+      return `<a href="${resolved}">${label}</a>`
+    })
 }
 
 function escHtml(s: string): string {

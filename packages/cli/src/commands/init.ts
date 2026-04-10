@@ -10,6 +10,7 @@ import {
 } from '@chronicle/core'
 import { makeLLMProvider } from '../llm.js'
 import { formatDecisionEntry, formatRejectionEntry, formatDeepADR, slugify } from '../format.js'
+import { cmdHooksInstall } from './hooks.js'
 
 export async function cmdInit(opts: { depth: string; llm: string; limit?: string; concurrency?: string }) {
   const cwd = process.cwd()
@@ -45,6 +46,7 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
   if (commits.length === 0) {
     spinner.warn('No meaningful commits found in this range. Try --depth=all')
     writeBootstrapPlaceholder(cwd, depth)
+    await cmdHooksInstall({ silent: true })
     return
   }
 
@@ -74,6 +76,9 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
 
   spinner.succeed(chalk.green(`Done! .lore/ initialized from ${commits.length} commits`))
 
+  // Phase 6: always install git hooks so .lore/ stays current after every commit
+  await cmdHooksInstall({ silent: true })
+
   // Summary
   const decisions = results.filter(r => r.isDecision)
   const rejections = results.filter(r => r.isRejection)
@@ -85,10 +90,12 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
   ${chalk.red(rejections.length)} rejections captured  ${chalk.dim('← what was tried & abandoned')}
   ${chalk.yellow(deep.length)} deep ADRs generated
 
+  ${chalk.green('✓')} Git hooks installed — .lore/ updates automatically after every commit
+
   ${chalk.bold('Next steps:')}
   ${chalk.dim('chronicle inject')}          — pipe context into your AI tool
   ${chalk.dim('chronicle deepen')}          — scan further back in history
-  ${chalk.dim('chronicle inject | claude')} — start a Claude session with full context
+  ${chalk.dim('chronicle setup --tool claude-code')} — wire MCP + session context
   `)
 }
 

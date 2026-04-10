@@ -26,11 +26,11 @@ if [ -z "$COMMIT_SOURCE" ]; then
 fi
 `
 
-export async function cmdHooksInstall() {
+export async function cmdHooksInstall({ silent = false } = {}) {
   const root = findGitRoot()
   if (!root) {
-    console.error(chalk.red('✗  Not a git repository.'))
-    process.exit(1)
+    if (!silent) console.error(chalk.red('✗  Not a git repository.'))
+    return
   }
 
   const hooksDir = join(root, '.git', 'hooks')
@@ -38,10 +38,12 @@ export async function cmdHooksInstall() {
   installHook(hooksDir, 'post-commit', POST_COMMIT_HOOK)
   installHook(hooksDir, 'prepare-commit-msg', PREPARE_COMMIT_MSG_HOOK)
 
-  console.log(chalk.green('✓  Chronicle hooks installed'))
-  console.log(chalk.dim('   post-commit          → captures decisions after each commit (async)'))
-  console.log(chalk.dim('   prepare-commit-msg   → enriches commit messages with context'))
-  console.log(chalk.dim('\n   Run `chronicle hooks remove` to uninstall'))
+  if (!silent) {
+    console.log(chalk.green('✓  Chronicle hooks installed'))
+    console.log(chalk.dim('   post-commit          → captures decisions after each commit (async)'))
+    console.log(chalk.dim('   prepare-commit-msg   → enriches commit messages with context'))
+    console.log(chalk.dim('\n   Run `chronicle hooks remove` to uninstall'))
+  }
 }
 
 export async function cmdHooksRemove() {
