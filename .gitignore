@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.lore/.extraction-cache.json
+.lore/capture.log

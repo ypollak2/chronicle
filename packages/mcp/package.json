@@ -1,0 +1,24 @@
+{
+  "name": "@chronicle/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Chronicle — Claude Code native integration",
+  "type": "module",
+  "bin": {
+    "chronicle-mcp": "./src/server.ts"
+  },
+  "scripts": {
+    "build": "tsup src/server.ts --format esm --banner.js '#!/usr/bin/env node'",
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@chronicle/core": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
