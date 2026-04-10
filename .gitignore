@@ -1,5 +1,6 @@
 node_modules/
 dist/
+packages/python/chronicle/_dist/
 *.tsbuildinfo
 .env
 .lore/.extraction-cache.json

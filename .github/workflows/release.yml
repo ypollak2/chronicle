@@ -15,7 +15,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
 
       - uses: actions/setup-python@v5
         with:
@@ -38,14 +37,15 @@ jobs:
           .venv/bin/pip install -e . --quiet
           .venv/bin/pytest tests/ -v
 
-      - name: Publish to npm
-        run: npm publish -w packages/cli --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Bundle CLI into Python package
+        run: |
+          mkdir -p packages/python/chronicle/_dist
+          cp packages/cli/dist/cli.js packages/python/chronicle/_dist/
 
       - name: Build Python wheel
         run: |
           cd packages/python
+          python -m venv .venv
           .venv/bin/pip install hatchling twine --quiet
           .venv/bin/python -m hatchling build
 

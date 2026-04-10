@@ -1,10 +1,16 @@
 """
-Subprocess wrapper — delegates all work to the Node binary (chronicle-dev).
-Requires Node ≥ 20 on PATH. The Node package is the source of truth.
+Subprocess wrapper — delegates all work to the bundled Node CLI (cli.js).
+The built JS is shipped inside this Python package; only Node ≥ 20 is required.
+No npm installation needed.
 """
+import os
 import shutil
 import subprocess
 import sys
+
+# Bundled JS lives next to this file in _dist/cli.js (added at build time)
+_DIST_DIR = os.path.join(os.path.dirname(__file__), '_dist')
+_BUNDLED_CLI = os.path.join(_DIST_DIR, 'cli.js')
 
 
 def _node_available() -> bool:
@@ -19,35 +25,17 @@ def _node_available() -> bool:
         return False
 
 
-def _chronicle_binary() -> list[str]:
-    """Return the command list that invokes the Node chronicle CLI.
-
-    Never calls 'chronicle' directly — that would call this Python wrapper
-    recursively. Always delegates to the Node package via npm/npx.
-    """
-    # If the user has `npm install -g chronicle-dev`, the Node binary lands
-    # at a path like /usr/local/bin/chronicle — but so does this Python script.
-    # We disambiguate by checking for the npm global bin explicitly.
-    npm = shutil.which("npm")
-    if npm:
-        try:
-            prefix = subprocess.check_output(
-                [npm, "root", "-g"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-            # npm global bin is one level up from global node_modules
-            import os
-            global_bin = os.path.join(os.path.dirname(prefix), "bin", "chronicle")
-            # Only use it if it's a Node script (not this Python script)
-            if os.path.exists(global_bin):
-                with open(global_bin) as f:
-                    first_line = f.readline()
-                if "node" in first_line and "python" not in first_line:
-                    return [global_bin]
-        except Exception:
-            pass
-
-    # Fallback: npx installs on-demand from npm registry
-    return ["npx", "--yes", "chronicle-dev"]
+def _chronicle_command() -> list[str]:
+    """Return the command that invokes the Chronicle CLI."""
+    if os.path.exists(_BUNDLED_CLI):
+        return ["node", _BUNDLED_CLI]
+    # Development fallback: run from source via tsx
+    src = os.path.join(os.path.dirname(__file__), '..', '..', 'cli', 'src', 'cli.ts')
+    if os.path.exists(src):
+        return ["npx", "tsx", src]
+    raise RuntimeError(
+        "Chronicle CLI not found. Re-install the package: pip install --force-reinstall chronicle-dev"
+    )
 
 
 def main() -> None:
@@ -59,6 +47,11 @@ def main() -> None:
         )
         sys.exit(1)
 
-    cmd = _chronicle_binary() + sys.argv[1:]
+    try:
+        cmd = _chronicle_command() + sys.argv[1:]
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+
     result = subprocess.run(cmd)
     sys.exit(result.returncode)

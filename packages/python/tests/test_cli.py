@@ -1,7 +1,8 @@
 """Tests for the Chronicle Python wrapper."""
+import os
 import subprocess
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import pytest
 
 
@@ -20,9 +21,8 @@ def test_node_version_is_20_plus():
     assert major >= 20, f"Node {version_str} < 20"
 
 
-def test_main_exits_nonzero_without_node(monkeypatch):
+def test_main_exits_nonzero_without_node():
     """main() exits with code 1 when Node is not available."""
-    from chronicle._cli import _node_available
     with patch("chronicle._cli._node_available", return_value=False):
         with pytest.raises(SystemExit) as exc:
             from chronicle._cli import main
@@ -30,29 +30,31 @@ def test_main_exits_nonzero_without_node(monkeypatch):
         assert exc.value.code == 1
 
 
-def test_chronicle_binary_prefers_node_global():
-    """_chronicle_binary returns a list starting with a string."""
-    from chronicle._cli import _chronicle_binary
-    cmd = _chronicle_binary()
-    assert isinstance(cmd, list)
-    assert len(cmd) >= 1
-    assert isinstance(cmd[0], str)
+def test_chronicle_command_uses_bundled_cli_when_present(tmp_path):
+    """_chronicle_command() uses the bundled cli.js when it exists."""
+    fake_cli = tmp_path / "cli.js"
+    fake_cli.write_text("// fake")
+    with patch("chronicle._cli._BUNDLED_CLI", str(fake_cli)):
+        from chronicle._cli import _chronicle_command
+        cmd = _chronicle_command()
+        assert cmd == ["node", str(fake_cli)]
 
 
-def test_chronicle_binary_fallback_is_npx():
-    """Falls back to npx when no global Node binary found."""
-    import shutil
-    with patch("shutil.which", return_value=None):
-        from importlib import reload
-        import chronicle._cli as cli_module
-        # Simulate npm not found → must fall back to npx
-        with patch("subprocess.check_output", side_effect=Exception("no npm")):
-            cmd = cli_module._chronicle_binary()
-            assert cmd[0] in ("npx", "chronicle"), f"Unexpected fallback: {cmd}"
+def test_chronicle_command_raises_when_no_bundle(tmp_path):
+    """_chronicle_command() raises RuntimeError when bundled CLI is missing."""
+    missing = str(tmp_path / "nonexistent.js")
+    missing_src = str(tmp_path / "also_missing.ts")
+    with patch("chronicle._cli._BUNDLED_CLI", missing):
+        # Also patch the src fallback path check
+        import chronicle._cli as mod
+        orig = mod.os.path.exists
+        with patch.object(mod.os.path, "exists", side_effect=lambda p: False):
+            with pytest.raises(RuntimeError, match="Re-install"):
+                mod._chronicle_command()
 
 
 def test_package_version_defined():
     """Package version must be defined."""
     import chronicle
     assert hasattr(chronicle, "__version__")
-    assert chronicle.__version__ == "0.1.0"
+    assert chronicle.__version__ == "0.4.0"

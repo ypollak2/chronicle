@@ -6,4 +6,5 @@ export default defineConfig({
   format: ['esm'],
   banner: { js: '#!/usr/bin/env node' },
   clean: true,
+  splitting: false,   // single output file — easier to bundle in the Python wheel
 })
