@@ -10,7 +10,7 @@ import { join } from 'path'
 export async function cmdMcp() {
   const server = new McpServer({
     name: 'chronicle',
-    version: '0.5.2',
+    version: '0.5.3',
   })
 
   // ── chronicle_get_context ────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export async function cmdMcp() {
       const slug = slugify(title)
       const deepLink = isDeep ? ` [→](decisions/${slug}.md)` : ''
       appendToStore(root, 'decisions',
-        `| ${title.slice(0, 50)} | ${affects.join(', ').slice(0, 40)} | ${risk} |${deepLink} |`
+        `| ${title.slice(0, 60)} | ${affects.join(', ')} | ${risk} |${deepLink} |`
       )
       if (isDeep) {
         writeDeepDecision(root, slug,

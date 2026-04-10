@@ -3,6 +3,8 @@ import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join, extname } from 'path'
 import { findLoreRoot, lorePath, readStore } from '@chronicle/core'
+import { buildGraphData } from '../graph.js'
+import { renderGraphHtml } from './graph.js'
 
 export async function cmdServe(opts: { port?: string }) {
   const root = findLoreRoot()
@@ -37,11 +39,25 @@ export async function cmdServe(opts: { port?: string }) {
     }
 
     if (url === '/api/search') {
-      // Simple search API — ?q=query
       const q = new URL(url, `http://localhost`).searchParams.get('q') ?? ''
       const results = searchLore(loreDir, q, 50)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(results))
+      return
+    }
+
+    if (url === '/api/graph') {
+      const data = buildGraphData(root)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(data))
+      return
+    }
+
+    if (url === '/graph') {
+      const projectName = root.split('/').pop() ?? 'project'
+      const data = buildGraphData(root)
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(renderGraphHtml(data, projectName))
       return
     }
 
@@ -82,6 +98,7 @@ function renderIndex(root: string, loreDir: string): string {
         <a href="/file/decisions.md">Decision Log</a>
         <a href="/file/rejected.md">Rejected Ideas</a>
         <a href="/file/evolution.md">System Evolution</a>
+        <a href="/graph" style="color:#3fb950">◆ Graph View</a>
         ${adrs.length ? `<hr><small>Deep ADRs (${adrs.length})</small>` : ''}
         ${adrs.map(a => `<a href="/file/${encodeURIComponent(a.file)}">${a.name}</a>`).join('\n')}
       </nav>

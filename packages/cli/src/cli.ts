@@ -5,6 +5,7 @@ import { cmdDeepen } from './commands/deepen.js'
 import { cmdHooksInstall, cmdHooksRemove, cmdCapture, cmdEnrichCommit } from './commands/hooks.js'
 import { cmdSetup } from './commands/setup.js'
 import { cmdDiagram } from './commands/diagram.js'
+import { cmdGraph } from './commands/graph.js'
 import { cmdEvolution } from './commands/evolution.js'
 import { cmdDoctor } from './commands/doctor.js'
 import { cmdSearch } from './commands/search.js'
@@ -19,7 +20,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.5.2')
+  .version('0.5.3')
 
 program
   .command('init')
@@ -84,6 +85,13 @@ program
   .description('Generate ASCII diagrams from .lore/ store')
   .option('--type <type>', 'architecture|dependencies|evolution (default: all)')
   .action(cmdDiagram)
+
+program
+  .command('graph')
+  .description('Generate interactive HTML graph of module topology and decisions')
+  .option('--output <file>', 'output filename (default: chronicle-graph.html)')
+  .option('--no-open', 'do not open browser after generating')
+  .action(cmdGraph)
 
 const session = program.command('session').description('Manage session notes in .lore/sessions/')
 session.command('save [message]').description('Save a session note with optional message').action((msg) => cmdSession({ action: 'save', message: msg }))
