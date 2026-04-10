@@ -19,7 +19,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.5.0')
+  .version('0.5.1')
 
 program
   .command('init')

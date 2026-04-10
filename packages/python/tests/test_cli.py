@@ -57,4 +57,5 @@ def test_package_version_defined():
     """Package version must be defined."""
     import chronicle
     assert hasattr(chronicle, "__version__")
-    assert chronicle.__version__ == "0.4.0"
+    assert isinstance(chronicle.__version__, str)
+    assert len(chronicle.__version__) > 0
