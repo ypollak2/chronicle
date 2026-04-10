@@ -1,14 +1,34 @@
+import { execSync, spawnSync } from 'child_process'
 import type { LLMProvider } from '@chronicle/core'
 
+// Auto-detect best available provider if none specified
+export function detectProvider(): string {
+  // Prefer subscription CLIs over API keys — no cost, no key management
+  try { execSync('claude --version', { stdio: 'ignore' }); return 'claude-code' } catch { /* not available */ }
+  if (process.env.GEMINI_API_KEY) return 'gemini'
+  if (process.env.OPENAI_API_KEY) return 'openai'
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic'
+  try { execSync('codex --version', { stdio: 'ignore' }); return 'codex' } catch { /* not available */ }
+  throw new Error(
+    'No LLM provider found. Options:\n' +
+    '  • Use Claude Code subscription: already available if running inside Claude Code\n' +
+    '  • Set GEMINI_API_KEY for Gemini 2.5 Flash (free tier available)\n' +
+    '  • Set OPENAI_API_KEY for GPT-4o-mini\n' +
+    '  • Run Ollama locally: ollama pull qwen2.5:1.5b'
+  )
+}
+
 // Thin adapter — each provider speaks to the same LLMProvider interface
-// New providers (Gemini, OpenAI) are added here without touching extractor logic
 export function makeLLMProvider(name: string): LLMProvider {
-  switch (name) {
-    case 'anthropic': return makeAnthropicProvider()
-    case 'openai':    return makeOpenAIProvider()
-    case 'gemini':    return makeGeminiProvider()
-    case 'ollama':    return makeOllamaProvider()
-    default: throw new Error(`Unknown LLM provider: ${name}. Options: anthropic|openai|gemini|ollama`)
+  const resolved = name === 'auto' ? detectProvider() : name
+  switch (resolved) {
+    case 'anthropic':   return makeAnthropicProvider()
+    case 'openai':      return makeOpenAIProvider()
+    case 'gemini':      return makeGeminiProvider()
+    case 'ollama':      return makeOllamaProvider()
+    case 'claude-code': return makeClaudeCodeProvider()
+    case 'codex':       return makeCodexProvider()
+    default: throw new Error(`Unknown LLM provider: ${resolved}. Options: anthropic|openai|gemini|ollama|claude-code|codex|auto`)
   }
 }
 
@@ -76,6 +96,45 @@ function makeOllamaProvider(): LLMProvider {
     if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`)
     const data = await res.json() as { message: { content: string } }
     return data.message.content
+  }
+}
+
+// Uses the Claude Code CLI subscription — no API key needed
+// Requires: claude CLI installed and authenticated (claude.ai/download)
+// Prompt is passed via stdin — safe for large git diffs, no shell escaping issues
+function makeClaudeCodeProvider(): LLMProvider {
+  try { execSync('claude --version', { stdio: 'ignore' }) }
+  catch { throw new Error('claude CLI not found. Install from claude.ai/download') }
+
+  return async (prompt) => {
+    const result = spawnSync('claude', ['-p', '-', '--output-format', 'text'], {
+      input: prompt,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 120_000,
+    })
+    if (result.error) throw result.error
+    if (result.status !== 0) throw new Error(`claude CLI failed: ${result.stderr?.trim()}`)
+    return result.stdout.trim()
+  }
+}
+
+// Uses the OpenAI Codex CLI — no API key needed if authenticated
+// Requires: codex CLI installed (npm install -g @openai/codex)
+function makeCodexProvider(): LLMProvider {
+  try { execSync('codex --version', { stdio: 'ignore' }) }
+  catch { throw new Error('codex CLI not found. Install: npm install -g @openai/codex') }
+
+  return async (prompt) => {
+    const result = spawnSync('codex', ['exec', '--full-auto', '-'], {
+      input: prompt,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 120_000,
+    })
+    if (result.error) throw result.error
+    if (result.status !== 0) throw new Error(`codex CLI failed: ${result.stderr?.trim()}`)
+    return result.stdout.trim()
   }
 }
 

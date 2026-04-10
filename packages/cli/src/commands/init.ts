@@ -8,7 +8,7 @@ import {
   buildEvolution, renderEvolutionMarkdown,
   type ScanDepth, type ExtractionResult
 } from '@chronicle/core'
-import { makeLLMProvider } from '../llm.js'
+import { makeLLMProvider, detectProvider } from '../llm.js'
 import { formatDecisionEntry, formatRejectionEntry, formatDeepADR, slugify } from '../format.js'
 import { cmdHooksInstall } from './hooks.js'
 
@@ -16,16 +16,12 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
   const cwd = process.cwd()
   const depth = opts.depth as ScanDepth
   const limit = opts.limit ? parseInt(opts.limit, 10) : undefined
-  // Ollama runs locally — parallelism offers no benefit (single GPU); API providers can handle 4+
+  const resolvedLlm = opts.llm === 'auto' ? detectProvider() : opts.llm
   const concurrency = opts.concurrency
     ? parseInt(opts.concurrency, 10)
-    : opts.llm === 'ollama' ? 1 : 4
-
-  // Prevent double-init
-  if (existsSync(join(cwd, '.lore'))) {
-    console.log(chalk.yellow('⚠  .lore/ already exists. Run `chronicle deepen` to extend the scan.'))
-    return
-  }
+    : resolvedLlm === 'ollama' ? 1
+    : (resolvedLlm === 'claude-code' || resolvedLlm === 'codex') ? 2
+    : 4
 
   // Validate we're in a git repo
   if (!existsSync(join(cwd, '.git'))) {
@@ -33,33 +29,48 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
     process.exit(1)
   }
 
-  console.log(chalk.bold('\n◆ Chronicle — initializing\n'))
+  const isResume = existsSync(join(cwd, '.lore'))
+  if (isResume) {
+    console.log(chalk.bold('\n◆ Chronicle — resuming\n'))
+    console.log(chalk.dim('  .lore/ exists — skipping already-processed commits (cache hit)\n'))
+  } else {
+    console.log(chalk.bold('\n◆ Chronicle — initializing\n'))
+  }
+  console.log(chalk.dim(`  provider: ${resolvedLlm}  concurrency: ${concurrency}  depth: ${depth}\n`))
 
-  // Phase 1: scaffold the store
+  // Phase 1: scaffold the store (no-op if already exists)
   initStore(cwd)
   const spinner = ora('Scanning git history...').start()
 
   // Phase 2: collect commits
   const commits = getCommits(cwd, depth, limit)
-  spinner.text = `Found ${commits.length} meaningful commits — extracting decisions...`
 
   if (commits.length === 0) {
-    spinner.warn('No meaningful commits found in this range. Try --depth=all')
+    spinner.warn('No meaningful commits found. Check --depth or try --depth=all')
     writeBootstrapPlaceholder(cwd, depth)
     await cmdHooksInstall({ silent: true })
     return
   }
 
-  // Phase 3: extract decisions (v1 simple strategy, cached by SHA)
-  const llm = makeLLMProvider(opts.llm)
   const cache = createFileCache(cwd)
-  let processed = 0
+  const uncached = commits.filter(c => !cache.has(c.hash))
 
-  let batchCount = 0
+  if (uncached.length === 0) {
+    spinner.succeed(chalk.green(`All ${commits.length} commits already processed — .lore/ is up to date`))
+    await cmdHooksInstall({ silent: true })
+    return
+  }
+
+  spinner.text = `${commits.length} commits found, ${uncached.length} to process...`
+
+  // Phase 3: extract decisions (cached by SHA — safe to interrupt and re-run)
+  const llm = makeLLMProvider(resolvedLlm)
+  let done = 0
+
   const results = await extractFromCommits(commits, async (prompt) => {
     const result = await llm(prompt)
-    batchCount++
-    spinner.text = `Processing commits... batch ${batchCount}`
+    done = Math.min(done + 6, uncached.length)   // approx batch size
+    spinner.text = `Processing commits... ${done}/${uncached.length} (${Math.round(done/uncached.length*100)}%)`
     return result
   }, { strategy: 'simple', cache, concurrency })
 
@@ -74,12 +85,11 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
     writeStore(cwd, 'evolution', renderEvolutionMarkdown(eras))
   }
 
-  spinner.succeed(chalk.green(`Done! .lore/ initialized from ${commits.length} commits`))
+  spinner.succeed(chalk.green(`Done! Processed ${uncached.length} commits (${commits.length} total in history)`))
 
-  // Phase 6: always install git hooks so .lore/ stays current after every commit
+  // Phase 6: always install git hooks
   await cmdHooksInstall({ silent: true })
 
-  // Summary
   const decisions = results.filter(r => r.isDecision)
   const rejections = results.filter(r => r.isRejection)
   const deep = decisions.filter(r => r.isDeep)
@@ -93,9 +103,9 @@ export async function cmdInit(opts: { depth: string; llm: string; limit?: string
   ${chalk.green('✓')} Git hooks installed — .lore/ updates automatically after every commit
 
   ${chalk.bold('Next steps:')}
-  ${chalk.dim('chronicle inject')}          — pipe context into your AI tool
-  ${chalk.dim('chronicle deepen')}          — scan further back in history
-  ${chalk.dim('chronicle setup --tool claude-code')} — wire MCP + session context
+  ${chalk.dim('chronicle inject')}                     — pipe context into your AI tool
+  ${chalk.dim('chronicle setup --tool claude-code')}   — wire MCP + session context
+  ${chalk.dim('chronicle serve')}                      — browse .lore/ in the web viewer
   `)
 }
 

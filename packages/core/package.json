@@ -1,6 +1,6 @@
 {
   "name": "@chronicle/core",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Core store logic for Chronicle",
   "type": "module",
   "main": "./dist/index.js",

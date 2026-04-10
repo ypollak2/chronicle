@@ -10,7 +10,7 @@ import { join } from 'path'
 export async function cmdMcp() {
   const server = new McpServer({
     name: 'chronicle',
-    version: '0.5.3',
+    version: '0.5.4',
   })
 
   // ── chronicle_get_context ────────────────────────────────────────────────────
