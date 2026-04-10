@@ -29,9 +29,12 @@ const DEPTH_FLAGS: Record<ScanDepth, string> = {
   'all':     '',
 }
 
-export function getCommits(repoRoot: string, depth: ScanDepth): CommitMeta[] {
+export function getCommits(repoRoot: string, depth: ScanDepth, limit?: number): CommitMeta[] {
   const since = DEPTH_FLAGS[depth]
-  const logCmd = `git -C "${repoRoot}" log ${since} --format="%H|%ai|%s|%b" --no-merges`
+  const SEP = '\x1f'  // ASCII unit separator — never appears in commit messages
+  // Apply --max-count early so git doesn't read thousands of commits before we slice
+  const maxCount = limit ? `--max-count=${limit * 3}` : ''
+  const logCmd = `git -C "${repoRoot}" log ${since} ${maxCount} --format="%H${SEP}%ai${SEP}%s${SEP}%b" --no-merges`
 
   let raw: string
   try {
@@ -44,14 +47,20 @@ export function getCommits(repoRoot: string, depth: ScanDepth): CommitMeta[] {
     .split('\n')
     .filter(Boolean)
     .map(line => {
-      const [hash, date, subject, ...bodyParts] = line.split('|')
-      return { hash, date, subject, body: bodyParts.join('|') }
+      const [hash, date, subject, ...bodyParts] = line.split(SEP)
+      return { hash, date, subject: subject ?? '', body: bodyParts.join(' ') }
     })
+    .filter(c => c.hash && c.subject)
 
-  return commits
+  // Fetch all tags once — avoids one `git tag --points-at` call per commit
+  const tagsByHash = getTagsByHash(repoRoot)
+
+  const filtered = commits
     .filter(c => !isNoise(c.subject))
-    .map(c => enrichWithDiff(repoRoot, c))
+    .map(c => enrichWithDiff(repoRoot, c, tagsByHash))
     .filter(c => countDiffLines(c.diff) >= MIN_DIFF_LINES)
+
+  return limit ? filtered.slice(0, limit) : filtered
 }
 
 export function getGitTags(repoRoot: string): Record<string, string> {
@@ -72,38 +81,57 @@ function isNoise(subject: string): boolean {
   return NOISE_PREFIXES.some(p => lower.startsWith(p + ':') || lower.startsWith(p + '('))
 }
 
-function enrichWithDiff(repoRoot: string, commit: { hash: string; date: string; subject: string; body: string }): CommitMeta {
+// Fetch all tags keyed by short hash — one call for the entire repo
+function getTagsByHash(repoRoot: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  try {
+    const raw = execSync(
+      `git -C "${repoRoot}" tag --format="%(objectname:short)|%(refname:short)"`,
+      { maxBuffer: 1024 * 1024 }
+    ).toString()
+    for (const line of raw.split('\n').filter(Boolean)) {
+      const [hash, tag] = line.split('|')
+      if (!hash || !tag) continue
+      const existing = map.get(hash) ?? []
+      existing.push(tag)
+      map.set(hash, existing)
+    }
+  } catch { /* no tags or not a git repo */ }
+  return map
+}
+
+function enrichWithDiff(
+  repoRoot: string,
+  commit: { hash: string; date: string; subject: string; body: string },
+  tagsByHash: Map<string, string[]>
+): CommitMeta {
   let diffStat = ''
   let diff = ''
-  let tags: string[] = []
 
   try {
-    diffStat = execSync(
-      `git -C "${repoRoot}" show --stat --format="" ${commit.hash}`,
-      { maxBuffer: 1024 * 1024 }
-    ).toString().trim()
-
-    const rawDiff = execSync(
-      `git -C "${repoRoot}" show --format="" ${commit.hash}`,
+    // Single git show call — stat summary + full diff in one round trip
+    const raw = execSync(
+      `git -C "${repoRoot}" show --stat -p ${commit.hash}`,
       { maxBuffer: 10 * 1024 * 1024 }
     ).toString()
-    diff = rawDiff.slice(0, MAX_DIFF_CHARS)
-    if (rawDiff.length > MAX_DIFF_CHARS) {
-      diff += `\n... [truncated, ${rawDiff.length} chars total]`
+
+    // Split at first "diff --git" to separate stat from diff content
+    const diffStart = raw.indexOf('\ndiff --git ')
+    if (diffStart !== -1) {
+      diffStat = raw.slice(0, diffStart).split('\n').filter(l => l.includes('|') || l.includes('changed')).join('\n').trim()
+      const rawDiff = raw.slice(diffStart + 1)
+      diff = rawDiff.slice(0, MAX_DIFF_CHARS)
+      if (rawDiff.length > MAX_DIFF_CHARS) {
+        diff += `\n... [truncated, ${rawDiff.length} chars total]`
+      }
     }
   } catch {
     // commit may be inaccessible (shallow clone etc.)
   }
 
-  try {
-    const tagRaw = execSync(
-      `git -C "${repoRoot}" tag --points-at ${commit.hash}`,
-      { maxBuffer: 64 * 1024 }
-    ).toString()
-    tags = tagRaw.split('\n').filter(Boolean)
-  } catch {
-    // no tags
-  }
+  // Tags: short hash prefix lookup (git uses 7-char short hashes)
+  const shortHash = commit.hash.slice(0, 7)
+  const tags = tagsByHash.get(shortHash) ?? []
 
   return { ...commit, diffStat, diff, tags }
 }

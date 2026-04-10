@@ -1,6 +1,7 @@
 import type { CommitMeta } from './scanner.js'
 
 export interface ExtractionResult {
+  hash?: string             // commit SHA from LLM response — used for cache keying
   isDecision: boolean       // true = worth logging
   isRejection: boolean      // true = something was tried and reverted
   title: string
@@ -42,10 +43,10 @@ Return a JSON array, one object per commit:
     "hash": "abc123",
     "isDecision": true,
     "isRejection": false,
-    "title": "Switch auth from sessions to JWT",
-    "affects": ["auth/", "api/middleware.ts"],
+    "title": "Move task queue from in-process to Redis",
+    "affects": ["workers/", "config/queue.ts"],
     "risk": "high",
-    "rationale": "Sessions required Redis which is not in budget until Q3. JWT allows stateless scaling.",
+    "rationale": "In-process queue lost jobs on crash. Redis provides durability and horizontal scaling.",
     "rejected": null,
     "isDeep": true
   }
@@ -66,19 +67,39 @@ export type ExtractionStrategy = 'simple' | 'clustered' | 'two-pass'
 export async function extractFromCommits(
   commits: CommitMeta[],
   llm: LLMProvider,
-  options: { strategy?: ExtractionStrategy; cache?: ExtractionCache } = {}
+  options: { strategy?: ExtractionStrategy; cache?: ExtractionCache; concurrency?: number } = {}
 ): Promise<ExtractionResult[]> {
-  const { strategy = 'simple', cache } = options
+  const { strategy = 'simple', cache, concurrency = 4 } = options
   const uncached = cache ? commits.filter(c => !cache.has(c.hash)) : commits
 
   let results: ExtractionResult[]
   switch (strategy) {
-    case 'simple':    results = await strategySimple(uncached, llm); break
-    case 'clustered': results = await strategyClustered(uncached, llm); break
+    case 'simple':    results = await strategySimple(uncached, llm, concurrency); break
+    case 'clustered': results = await strategyClustered(uncached, llm, concurrency); break
     case 'two-pass':  throw new Error('two-pass strategy not yet implemented (v3 roadmap)')
   }
 
-  if (cache) results.forEach((r, i) => cache.set(uncached[i].hash, r))
+  // Cache by hash from result (LLM returns hash in each object); fall back to positional
+  if (cache) {
+    results.forEach((r, i) => {
+      const hash = r.hash ?? uncached[i]?.hash
+      if (hash) cache.set(hash, r)
+    })
+  }
+  return results
+}
+
+// Run an array of async tasks with max `concurrency` in-flight at once
+async function runConcurrent<T>(tasks: Array<() => Promise<T>>, concurrency: number): Promise<T[]> {
+  const results: T[] = []
+  const queue = [...tasks]
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const task = queue.shift()!
+      results.push(await task())
+    }
+  })
+  await Promise.all(workers)
   return results
 }
 
@@ -169,44 +190,41 @@ function mergeSingletonBatches(commits: CommitMeta[]): CommitMeta[][] {
   return batches
 }
 
-async function strategyClustered(commits: CommitMeta[], llm: LLMProvider): Promise<ExtractionResult[]> {
+async function strategyClustered(commits: CommitMeta[], llm: LLMProvider, concurrency: number): Promise<ExtractionResult[]> {
   const clusters = clusterCommitsByFileOverlap(commits)
-  const results: ExtractionResult[] = []
-  for (const cluster of clusters) {
-    const raw = await llm(buildExtractionPrompt(cluster))
-    results.push(...parseExtractionResponse(raw))
-  }
-  return results
+  const tasks = clusters.map(cluster => () =>
+    llm(buildExtractionPrompt(cluster)).then(parseExtractionResponse)
+  )
+  const batchResults = await runConcurrent(tasks, concurrency)
+  return batchResults.flat()
 }
 
 // v1: fixed batches of 6 commits, capped at 5000 chars of diff per batch
-async function strategySimple(commits: CommitMeta[], llm: LLMProvider): Promise<ExtractionResult[]> {
+async function strategySimple(commits: CommitMeta[], llm: LLMProvider, concurrency: number): Promise<ExtractionResult[]> {
   const BATCH_SIZE = 6
   const MAX_BATCH_CHARS = 5000
-  const results: ExtractionResult[] = []
+  const batches: CommitMeta[][] = []
 
   let batch: CommitMeta[] = []
   let batchChars = 0
 
-  const flush = async () => {
-    if (batch.length === 0) return
-    const raw = await llm(buildExtractionPrompt(batch))
-    results.push(...parseExtractionResponse(raw))
-    batch = []
-    batchChars = 0
-  }
-
   for (const commit of commits) {
     const size = commit.diff.length
     if (batch.length >= BATCH_SIZE || batchChars + size > MAX_BATCH_CHARS) {
-      await flush()
+      batches.push(batch)
+      batch = []
+      batchChars = 0
     }
     batch.push(commit)
     batchChars += size
   }
-  await flush()
+  if (batch.length > 0) batches.push(batch)
 
-  return results
+  const tasks = batches.map(b => () =>
+    llm(buildExtractionPrompt(b)).then(parseExtractionResponse)
+  )
+  const batchResults = await runConcurrent(tasks, concurrency)
+  return batchResults.flat()
 }
 
 // Cache interface — SHA → result, so commits are never reprocessed

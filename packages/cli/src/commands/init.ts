@@ -11,9 +11,14 @@ import {
 import { makeLLMProvider } from '../llm.js'
 import { formatDecisionEntry, formatRejectionEntry, formatDeepADR, slugify } from '../format.js'
 
-export async function cmdInit(opts: { depth: string; llm: string }) {
+export async function cmdInit(opts: { depth: string; llm: string; limit?: string; concurrency?: string }) {
   const cwd = process.cwd()
   const depth = opts.depth as ScanDepth
+  const limit = opts.limit ? parseInt(opts.limit, 10) : undefined
+  // Ollama runs locally — parallelism offers no benefit (single GPU); API providers can handle 4+
+  const concurrency = opts.concurrency
+    ? parseInt(opts.concurrency, 10)
+    : opts.llm === 'ollama' ? 1 : 4
 
   // Prevent double-init
   if (existsSync(join(cwd, '.lore'))) {
@@ -34,7 +39,7 @@ export async function cmdInit(opts: { depth: string; llm: string }) {
   const spinner = ora('Scanning git history...').start()
 
   // Phase 2: collect commits
-  const commits = getCommits(cwd, depth)
+  const commits = getCommits(cwd, depth, limit)
   spinner.text = `Found ${commits.length} meaningful commits — extracting decisions...`
 
   if (commits.length === 0) {
@@ -48,12 +53,13 @@ export async function cmdInit(opts: { depth: string; llm: string }) {
   const cache = createFileCache(cwd)
   let processed = 0
 
+  let batchCount = 0
   const results = await extractFromCommits(commits, async (prompt) => {
     const result = await llm(prompt)
-    processed += 6  // approximate
-    spinner.text = `Processing commits... ${Math.min(processed, commits.length)}/${commits.length}`
+    batchCount++
+    spinner.text = `Processing commits... batch ${batchCount}`
     return result
-  }, { strategy: 'simple', cache })
+  }, { strategy: 'simple', cache, concurrency })
 
   // Phase 4: write to store
   spinner.text = 'Writing knowledge base...'
@@ -91,9 +97,11 @@ function buildStore(root: string, results: ExtractionResult[]) {
   const rejections = results.filter(r => r.isRejection)
 
   // decisions.md — lightweight index
-  const tableRows = decisions.map(d =>
-    `| ${d.title.slice(0, 50)} | ${d.affects.join(', ').slice(0, 40)} | ${d.risk} |${d.isDeep ? ` [→](decisions/${slugify(d.title)}.md)` : ''} |`
-  ).join('\n')
+  const tableRows = decisions.map(d => {
+    const title = d.title ?? 'Unnamed decision'
+    const affects = (d.affects ?? []).join(', ')
+    return `| ${title.slice(0, 50)} | ${affects.slice(0, 40)} | ${d.risk ?? 'low'} |${d.isDeep ? ` [→](decisions/${slugify(title)}.md)` : ''} |`
+  }).join('\n')
 
   writeStore(root, 'decisions', `# Decision Log\n\n| Decision | Affects | Risk | ADR |\n|----------|---------|------|-----|\n${tableRows}\n`)
 
@@ -104,7 +112,8 @@ function buildStore(root: string, results: ExtractionResult[]) {
 
   // deep ADR files for complex decisions
   for (const d of decisions.filter(r => r.isDeep)) {
-    writeDeepDecision(root, slugify(d.title), formatDeepADR(d))
+    const title = d.title ?? 'unnamed-decision'
+    writeDeepDecision(root, slugify(title), formatDeepADR(d))
   }
 }
 

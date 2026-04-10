@@ -5,29 +5,31 @@ export function slugify(title: string): string {
 }
 
 export function formatDecisionEntry(d: ExtractionResult): string {
-  return `## ${d.title}\n**Affects**: ${d.affects.join(', ')} | **Risk**: ${d.risk}\n\n${d.rationale}\n`
+  const affects = (d.affects ?? []).join(', ') || '—'
+  return `## ${d.title ?? 'Unnamed'}\n**Affects**: ${affects} | **Risk**: ${d.risk ?? 'low'}\n\n${d.rationale ?? ''}\n`
 }
 
 export function formatRejectionEntry(r: ExtractionResult): string {
-  return `## ${r.title} — rejected\n**Replaced by**: _(see decisions)_ | **Reason**: ${r.rejected}\n\n${r.rationale}\n`
+  return `## ${r.title ?? 'Unnamed'} — rejected\n**Replaced by**: _(see decisions)_ | **Reason**: ${r.rejected ?? '—'}\n\n${r.rationale ?? ''}\n`
 }
 
 export function formatDeepADR(d: ExtractionResult): string {
   const date = new Date().toISOString().slice(0, 10)
-  return `# ADR: ${d.title}
+  const affects = (d.affects ?? []).join(', ') || '—'
+  const risk = d.risk ?? 'low'
+  return `# ADR: ${d.title ?? 'Unnamed'}
 
 **Date**: ${date}
 **Status**: Accepted
-**Affects**: ${d.affects.join(', ')}
-**Risk**: ${d.risk}
-**Reversibility**: ${d.risk === 'high' ? 'low' : d.risk === 'medium' ? 'medium' : 'high'}
+**Affects**: ${affects}
+**Risk**: ${risk}
+**Reversibility**: ${risk === 'high' ? 'low' : risk === 'medium' ? 'medium' : 'high'}
 
 ## Decision
 
-${d.rationale}
+${d.rationale ?? '—'}
 
-${d.rejected ? `## Rejected Alternatives\n\n${d.rejected}\n` : ''}
-## Consequences
+${d.rejected ? `## Rejected Alternatives\n\n${d.rejected}\n` : ''}## Consequences
 
 _To be annotated as consequences become clear._
 `

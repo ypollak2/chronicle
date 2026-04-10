@@ -6,6 +6,40 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.5.0] — 2026-04-10
+
+### Added
+
+**New Commands**
+- `chronicle doctor` — validates `.lore/` health: checks for missing files, broken ADR links, cache integrity, and git hook installation
+- `chronicle search <query>` — full-text search across all `.lore/` markdown files with highlighted matches and file:line context; `--json` flag for machine output
+- `chronicle serve [--port]` — zero-dependency local web viewer (dark theme, sidebar nav, live search); opens in browser automatically
+- `chronicle session save|list|show` — save and browse session notes in `.lore/sessions/`; supports piped input for auto-summaries
+
+**Parallel Extraction**
+- `extractFromCommits()` now runs LLM batches concurrently (default `concurrency=4` for API providers, `1` for Ollama)
+- `--concurrency <n>` flag on `init` and `deepen` for manual override
+- Benchmark: 4 batches in parallel → ~4× speedup vs sequential for Anthropic/Gemini/OpenAI
+
+**Progressive History (`--limit`)**
+- `chronicle init --limit <n>` — cap initial scan to N most recent commits
+- `chronicle deepen --limit <n>` — process additional batches incrementally
+- Enables fast first-run (20 commits → ~5s with API) then deepening as needed
+
+**LLM Provider Updates**
+- Gemini updated to `gemini-2.5-flash` with `thinkingBudget: 0` (thinking mode disabled for structured extraction — 8× faster)
+- All providers now defensively handle partial LLM responses (missing `title`, `affects`, `risk` fields no longer crash)
+
+**Null-safety fixes**
+- `buildStore`, `formatDeepADR`, `formatDecisionEntry`, `formatRejectionEntry` all handle LLM responses missing optional fields
+- Cache fallback: results matched to commits by `hash` field, with positional fallback
+
+### Fixed
+- `deepen` now accepts `--llm`, `--limit`, `--concurrency` (was hardcoded to anthropic, no limit)
+- `git log` delimiter changed from `|` to `\x1f` (ASCII unit separator) — fixes parsing for repos with `|` in commit subjects
+
+---
+
 ## [0.4.0] — 2026-04-10
 
 ### Added

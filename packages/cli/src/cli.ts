@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Command } from 'commander'
 import { cmdInit } from './commands/init.js'
 import { cmdInject } from './commands/inject.js'
@@ -7,6 +6,10 @@ import { cmdHooksInstall, cmdHooksRemove, cmdCapture, cmdEnrichCommit } from './
 import { cmdSetup } from './commands/setup.js'
 import { cmdDiagram } from './commands/diagram.js'
 import { cmdEvolution } from './commands/evolution.js'
+import { cmdDoctor } from './commands/doctor.js'
+import { cmdSearch } from './commands/search.js'
+import { cmdServe } from './commands/serve.js'
+import { cmdSession } from './commands/session.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -15,13 +18,15 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.4.0')
+  .version('0.5.0')
 
 program
   .command('init')
   .description('Bootstrap .lore/ from git history')
   .option('-d, --depth <depth>', 'how far back to scan: 1month|3months|6months|1year|all', '6months')
-  .option('--llm <provider>', 'LLM provider: anthropic|openai|gemini', 'anthropic')
+  .option('--llm <provider>', 'LLM provider: anthropic|openai|gemini|ollama', 'anthropic')
+  .option('--limit <n>', 'cap commits to N most recent (use with deepen to process incrementally)')
+  .option('--concurrency <n>', 'parallel LLM calls (default: 4 for API providers, 1 for ollama)')
   .action(cmdInit)
 
 program
@@ -36,7 +41,28 @@ program
   .command('deepen')
   .description('Extend the scan further back in history')
   .option('-d, --depth <depth>', 'new depth: 1year|all', '1year')
+  .option('--llm <provider>', 'LLM provider: anthropic|openai|gemini|ollama', 'anthropic')
+  .option('--limit <n>', 'cap additional commits to N most recent')
+  .option('--concurrency <n>', 'parallel LLM calls')
   .action(cmdDeepen)
+
+program
+  .command('doctor')
+  .description('Validate .lore/ health — check files, links, cache, and hooks')
+  .action(cmdDoctor)
+
+program
+  .command('search <query>')
+  .description('Full-text search across .lore/ knowledge base')
+  .option('--limit <n>', 'max results', '20')
+  .option('--json', 'output results as JSON')
+  .action(cmdSearch)
+
+program
+  .command('serve')
+  .description('Start a local web viewer for .lore/')
+  .option('--port <n>', 'port to listen on', '4242')
+  .action(cmdServe)
 
 program
   .command('setup')
@@ -57,6 +83,11 @@ program
   .description('Generate ASCII diagrams from .lore/ store')
   .option('--type <type>', 'architecture|dependencies|evolution (default: all)')
   .action(cmdDiagram)
+
+const session = program.command('session').description('Manage session notes in .lore/sessions/')
+session.command('save [message]').description('Save a session note with optional message').action((msg) => cmdSession({ action: 'save', message: msg }))
+session.command('list').description('List saved session notes').action(() => cmdSession({ action: 'list' }))
+session.command('show [n]').description('Show last N session notes (default: 1)').action((n) => cmdSession({ action: 'show', n }))
 
 const hooks = program.command('hooks').description('Manage git hooks')
 hooks.command('install').description('Install post-commit and prepare-commit-msg hooks').action(cmdHooksInstall)

@@ -3,5 +3,7 @@ dist/
 packages/python/chronicle/_dist/
 *.tsbuildinfo
 .env
+.env.local
+.env.*.local
 .lore/.extraction-cache.json
 .lore/capture.log

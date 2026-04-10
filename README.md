@@ -39,14 +39,28 @@ In ~200 tokens, your next AI session knows what took you days to learn.
 ## Install
 
 ```bash
-# npm
-npm install -g chronicle-dev
-
-# pip
 pip install chronicle-dev
 ```
 
-**Requires Node.js ≥ 20.**
+**Requires Python ≥ 3.9 and Node.js ≥ 20.**
+
+The pip package bundles the Node.js CLI — no separate `npm install` needed.
+
+### LLM provider
+
+Chronicle needs one API key to analyze your git history:
+
+| Provider | Env var | Notes |
+|----------|---------|-------|
+| **Gemini** (default) | `GEMINI_API_KEY` | Free tier. Fast, high quality |
+| **OpenAI** | `OPENAI_API_KEY` | GPT-4o-mini |
+| **Anthropic** | `ANTHROPIC_API_KEY` | Claude Haiku |
+| **Ollama** | _(none)_ | Local, free, slower |
+
+```bash
+export GEMINI_API_KEY=...    # get from aistudio.google.com/apikey
+chronicle init --llm gemini  # or anthropic / openai / ollama
+```
 
 ---
 
@@ -160,12 +174,19 @@ Chronicle tools Claude calls automatically:
 
 | Command | Description |
 |---------|-------------|
-| `chronicle init [--depth=6months\|1year\|all] [--llm=anthropic\|openai\|gemini]` | Bootstrap from git history |
+| `chronicle init [--depth=6months\|1year\|all] [--llm=gemini\|anthropic\|openai\|ollama] [--limit=N] [--concurrency=N]` | Bootstrap from git history |
 | `chronicle inject [--files=<paths>] [--full] [--format=markdown\|xml\|plain]` | Output context to stdout |
-| `chronicle deepen [--depth=1year\|all]` | Extend scan without reprocessing |
+| `chronicle deepen [--depth=1year\|all] [--limit=N]` | Extend scan without reprocessing |
+| `chronicle doctor` | Validate `.lore/` health (files, links, cache, hooks) |
+| `chronicle search <query> [--limit=N] [--json]` | Full-text search across knowledge base |
+| `chronicle serve [--port=4242]` | Local web viewer — opens in browser |
+| `chronicle session save [message]` | Save a session note |
+| `chronicle session list` | List saved sessions |
+| `chronicle session show [n]` | Show last N sessions |
+| `chronicle evolution [--regen] [--view]` | Build/view system evolution timeline |
+| `chronicle diagram [--type=architecture\|dependencies\|evolution]` | Generate ASCII diagrams |
 | `chronicle hooks install` | Install git hooks |
 | `chronicle hooks remove` | Remove git hooks |
-| `chronicle mcp` | Start MCP server for Claude Code |
 
 ---
 

@@ -8,7 +8,7 @@ import {
 import { makeLLMProvider } from '../llm.js'
 import { formatRejectionEntry, formatDeepADR, slugify } from '../format.js'
 
-export async function cmdDeepen(opts: { depth: string; llm?: string }) {
+export async function cmdDeepen(opts: { depth: string; llm?: string; limit?: string; concurrency?: string }) {
   const root = findLoreRoot()
   if (!root) {
     console.error(chalk.red('✗  No .lore/ found. Run `chronicle init` first.'))
@@ -16,10 +16,16 @@ export async function cmdDeepen(opts: { depth: string; llm?: string }) {
   }
 
   const depth = opts.depth as ScanDepth
+  const limit = opts.limit ? parseInt(opts.limit, 10) : undefined
+  const llmName = opts.llm ?? 'anthropic'
+  const concurrency = opts.concurrency
+    ? parseInt(opts.concurrency, 10)
+    : llmName === 'ollama' ? 1 : 4
+
   const spinner = ora(`Scanning deeper: ${depth}...`).start()
 
   const cache = createFileCache(root)
-  const commits = getCommits(root, depth)
+  const commits = getCommits(root, depth, limit)
 
   // Only process commits not already in cache
   const uncached = commits.filter(c => !cache.has(c.hash))
@@ -29,9 +35,9 @@ export async function cmdDeepen(opts: { depth: string; llm?: string }) {
   }
 
   spinner.text = `Found ${uncached.length} new commits to process...`
-  const llm = makeLLMProvider(opts.llm ?? 'anthropic')
+  const llm = makeLLMProvider(llmName)
 
-  const results = await extractFromCommits(uncached, llm, { strategy: 'simple', cache })
+  const results = await extractFromCommits(uncached, llm, { strategy: 'simple', cache, concurrency })
 
   // Append new results to existing store (don't overwrite)
   const newDecisions = results.filter(r => r.isDecision)
@@ -39,14 +45,16 @@ export async function cmdDeepen(opts: { depth: string; llm?: string }) {
 
   for (const r of newRejections) appendToStore(root, 'rejected', formatRejectionEntry(r))
   for (const d of newDecisions.filter(d => d.isDeep)) {
-    writeDeepDecision(root, slugify(d.title), formatDeepADR(d))
+    writeDeepDecision(root, slugify(d.title ?? 'unnamed'), formatDeepADR(d))
   }
 
   // Prepend new rows to decisions.md (newer = at top)
   const existing = readStore(root, 'decisions')
-  const newRows = newDecisions.map(d =>
-    `| ${d.title.slice(0, 50)} | ${d.affects.join(', ').slice(0, 40)} | ${d.risk} |${d.isDeep ? ` [→](decisions/${slugify(d.title)}.md)` : ''} |`
-  ).join('\n')
+  const newRows = newDecisions.map(d => {
+    const title = d.title ?? 'Unnamed decision'
+    const affects = (d.affects ?? []).join(', ')
+    return `| ${title.slice(0, 50)} | ${affects.slice(0, 40)} | ${d.risk ?? 'low'} |${d.isDeep ? ` [→](decisions/${slugify(title)}.md)` : ''} |`
+  }).join('\n')
 
   if (newRows) {
     const insertAfter = '|----------|---------|------|-----|\n'

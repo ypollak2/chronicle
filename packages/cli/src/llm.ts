@@ -7,7 +7,8 @@ export function makeLLMProvider(name: string): LLMProvider {
     case 'anthropic': return makeAnthropicProvider()
     case 'openai':    return makeOpenAIProvider()
     case 'gemini':    return makeGeminiProvider()
-    default: throw new Error(`Unknown LLM provider: ${name}. Options: anthropic|openai|gemini`)
+    case 'ollama':    return makeOllamaProvider()
+    default: throw new Error(`Unknown LLM provider: ${name}. Options: anthropic|openai|gemini|ollama`)
   }
 }
 
@@ -57,17 +58,42 @@ function makeOpenAIProvider(): LLMProvider {
   }
 }
 
+function makeOllamaProvider(): LLMProvider {
+  return async (prompt) => {
+    const model = process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b'
+    const host  = process.env.OLLAMA_HOST  ?? 'http://localhost:11434'
+
+    const res = await fetch(`${host}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+
+    if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await res.text()}`)
+    const data = await res.json() as { message: { content: string } }
+    return data.message.content
+  }
+}
+
 function makeGeminiProvider(): LLMProvider {
   return async (prompt) => {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        // thinkingBudget: 0 disables thinking mode — extraction is a structured task, not reasoning
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { thinkingConfig: { thinkingBudget: 0 } },
+        }),
       }
     )
 
