@@ -34,7 +34,8 @@ jobs:
         run: |
           cd packages/python
           python -m venv .venv
-          .venv/bin/pip install -e ".[dev]" --quiet 2>/dev/null || .venv/bin/pip install pytest --quiet
+          .venv/bin/pip install pytest --quiet
+          .venv/bin/pip install -e . --quiet
 
       - name: Run Python tests
         run: npm run test:python

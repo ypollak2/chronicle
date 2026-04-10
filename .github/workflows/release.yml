@@ -35,7 +35,8 @@ jobs:
           cd packages/python
           python -m venv .venv
           .venv/bin/pip install pytest --quiet
-          npm run test:python
+          .venv/bin/pip install -e . --quiet
+          .venv/bin/pytest tests/ -v
 
       - name: Publish to npm
         run: npm publish -w packages/cli --access public
