@@ -12,6 +12,7 @@ import { cmdSearch } from './commands/search.js'
 import { cmdServe } from './commands/serve.js'
 import { cmdSession } from './commands/session.js'
 import { cmdMcp } from './commands/mcp.js'
+import { cmdEval } from './commands/eval.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -20,7 +21,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.6.0')
+  .version('0.7.0')
 
 program
   .command('init')
@@ -41,6 +42,7 @@ program
   .option('--top <n>', 'return only the N most relevant decisions')
   .option('--tokens <n>', 'auto-trim output to fit within N tokens (~4 chars/token)')
   .option('--no-stale', 'skip staleness detection (faster, no git log call)')
+  .option('--query <text>', 'natural language query for semantic ranking (uses local embeddings)')
   .action(cmdInject)
 
 program
@@ -62,6 +64,8 @@ program
   .description('Full-text search across .lore/ knowledge base')
   .option('--limit <n>', 'max results', '20')
   .option('--json', 'output results as JSON')
+  .option('--semantic', 'vector similarity search (requires @huggingface/transformers)')
+  .option('--hybrid', 'blend semantic + keyword scores (α=0.7 semantic)')
   .action(cmdSearch)
 
 program
@@ -103,6 +107,14 @@ const session = program.command('session').description('Manage session notes in 
 session.command('save [message]').description('Save a session note with optional message').action((msg) => cmdSession({ action: 'save', message: msg }))
 session.command('list').description('List saved session notes').action(() => cmdSession({ action: 'list' }))
 session.command('show [n]').description('Show last N session notes (default: 1)').action((n) => cmdSession({ action: 'show', n }))
+
+program
+  .command('eval')
+  .description('Run RAG quality harness — measures recall, MRR, and confidence accuracy')
+  .option('--init', 'bootstrap .lore/.eval.json test suite from existing decisions')
+  .option('--json', 'output results as JSON')
+  .option('--verbose', 'show per-case details')
+  .action(cmdEval)
 
 program
   .command('mcp')

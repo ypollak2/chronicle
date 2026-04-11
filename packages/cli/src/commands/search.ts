@@ -1,9 +1,12 @@
 import chalk from 'chalk'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { findLoreRoot, lorePath } from '@chronicle/core'
+import { findLoreRoot, lorePath, semanticSearch } from '@chronicle/core'
 
-export async function cmdSearch(query: string, opts: { limit?: string; json?: boolean }) {
+export async function cmdSearch(
+  query: string,
+  opts: { limit?: string; json?: boolean; semantic?: boolean; hybrid?: boolean; reindex?: boolean }
+) {
   const root = findLoreRoot()
   if (!root) {
     process.stderr.write(chalk.red('✗  No .lore/ found. Run `chronicle init` first.\n'))
@@ -16,11 +19,52 @@ export async function cmdSearch(query: string, opts: { limit?: string; json?: bo
   }
 
   const limit = opts.limit ? parseInt(opts.limit, 10) : 20
+
+  // ── Semantic / hybrid mode ───────────────────────────────────────────────
+  if (opts.semantic || opts.hybrid) {
+    const spinner = process.stderr.isTTY
+    if (spinner) process.stderr.write(chalk.dim('  Computing embeddings…\r'))
+
+    const semResults = await semanticSearch(root, query, {
+      topN: limit,
+      hybrid: opts.hybrid,
+    })
+
+    if (spinner) process.stderr.write('                         \r')
+
+    if (semResults === null) {
+      process.stderr.write(chalk.yellow(
+        '⚠  Semantic search unavailable — install @huggingface/transformers:\n' +
+        '   npm install @huggingface/transformers\n'
+      ))
+      // Fall through to keyword search
+    } else {
+      if (opts.json) {
+        process.stdout.write(JSON.stringify(semResults, null, 2))
+        return
+      }
+      if (semResults.length === 0) {
+        console.log(chalk.yellow(`No semantic results for "${query}"`))
+        return
+      }
+      const mode = opts.hybrid ? 'hybrid' : 'semantic'
+      console.log(chalk.bold(`\n◆ Search (${mode}): "${query}" — ${semResults.length} result(s)\n`))
+      for (const r of semResults) {
+        const pct = Math.round(r.score * 100)
+        const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10))
+        console.log(`  ${chalk.dim(r.source.padEnd(12))} ${chalk.cyan(bar)} ${chalk.bold(pct + '%')}`)
+        console.log(`    ${r.text.slice(0, 120)}`)
+        console.log()
+      }
+      return
+    }
+  }
+
+  // ── Keyword (default) mode ───────────────────────────────────────────────
   const loreDir = lorePath(root)
   const pattern = new RegExp(query, 'gi')
   const results: SearchResult[] = []
 
-  // Walk all markdown files in .lore/ recursively
   for (const file of walkMarkdown(loreDir)) {
     const content = readFileSync(file, 'utf8')
     const lines = content.split('\n')
@@ -30,15 +74,11 @@ export async function cmdSearch(query: string, opts: { limit?: string; json?: bo
           file: file.replace(loreDir + '/', ''),
           line: i + 1,
           text: lines[i].trim(),
-          // context: one line before and after
-          context: [
-            lines[i - 1]?.trim(),
-            lines[i + 1]?.trim(),
-          ].filter(Boolean),
+          context: [lines[i - 1]?.trim(), lines[i + 1]?.trim()].filter(Boolean),
         })
         if (results.length >= limit) break
       }
-      pattern.lastIndex = 0  // reset regex for next line
+      pattern.lastIndex = 0
     }
     if (results.length >= limit) break
   }
@@ -55,7 +95,6 @@ export async function cmdSearch(query: string, opts: { limit?: string; json?: bo
 
   console.log(chalk.bold(`\n◆ Search: "${query}" — ${results.length} result(s)\n`))
 
-  // Group by file
   const byFile = new Map<string, SearchResult[]>()
   for (const r of results) {
     const list = byFile.get(r.file) ?? []

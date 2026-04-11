@@ -6,6 +6,44 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.7.0] — 2026-04-11
+
+### Added
+
+**Local embedding engine (`@chronicle/core`)**
+- `embed(text)` / `embedBatch(texts)` — MiniLM-L6-v2 via `@huggingface/transformers` (22MB, fully offline)
+- `cosineSimilarity(a, b)` — dot product on normalized vectors
+- `loadEmbeddingCache` / `saveEmbeddingCache` — SHA-256 content-keyed JSON cache at `.lore/embeddings.json`
+- `getEmbeddings(texts, cache)` — batch embedding with cache deduplication (only new content is embedded)
+- `@huggingface/transformers` is an `optionalDependency` — Chronicle works without it, embedding features degrade gracefully to heuristic mode
+
+**Semantic search (`chronicle search`)**
+- `--semantic` — pure vector similarity search using MiniLM embeddings
+- `--hybrid` — linear blend: 0.7 × semantic + 0.3 × keyword score
+- Visual score bar output (█░░░ style) with source attribution
+- Graceful fallback to keyword search with install hint if transformers not available
+
+**Semantic inject ranking (`chronicle inject`)**
+- `--query <text>` — natural language query that re-ranks decision rows by semantic similarity
+- Phase 2 ranker: `0.6 × semantic + 0.4 × heuristic` blend when `--query` provided
+- `buildSemanticScores(rows, query)` exported from `@chronicle/core`
+
+**Incremental vector index (post-commit hook)**
+- `buildEmbeddingIndex(root)` — indexes all decisions, rejects, risks; skips cached content
+- Called automatically by `chronicle capture` after each commit (only new decisions are embedded)
+
+**RAG quality harness (`chronicle eval`)**
+- `chronicle eval` — runs 4 KPI checks: Decision Recall, Rejection Hit Rate, Semantic MRR@5, False Confidence Rate
+- `chronicle eval --init` — bootstraps `.lore/.eval.json` from existing decisions (ready to run immediately)
+- `--json` for machine-readable output; `--verbose` for per-case details
+- Exits 1 if any KPI is below target (suitable for CI)
+- KPI targets: Recall ≥ 80%, Rejection Hit ≥ 90%, MRR@5 ≥ 0.70, False Confidence ≤ 10%
+
+### Changed
+- `rankDecisions()` now accepts `semanticScores?: Map<string, number>` for hybrid scoring
+
+---
+
 ## [0.6.0] — 2026-04-11
 
 ### Added

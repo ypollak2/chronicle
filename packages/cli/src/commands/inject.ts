@@ -1,9 +1,9 @@
-import { findLoreRoot, readStore, lorePath, rankDecisions, trimToTokenBudget, buildFileModMap, annotateStaleDecisions, formatStaleWarning } from '@chronicle/core'
+import { findLoreRoot, readStore, lorePath, rankDecisions, buildSemanticScores, trimToTokenBudget, buildFileModMap, annotateStaleDecisions, formatStaleWarning } from '@chronicle/core'
 import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
 
-export async function cmdInject(opts: { files?: string; full?: boolean; format: string; minConfidence?: string; top?: string; tokens?: string; stale?: boolean }) {
+export async function cmdInject(opts: { files?: string; full?: boolean; format: string; minConfidence?: string; top?: string; tokens?: string; stale?: boolean; query?: string }) {
   const root = findLoreRoot()
   if (!root) {
     process.stderr.write(chalk.red('✗  No .lore/ found. Run `chronicle init` first.\n'))
@@ -34,7 +34,16 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
       }
     }
 
-    processed = rankDecisions(processed, { files: fileList, topN })
+    // Build semantic scores if --query provided (S3: hybrid ranker)
+    let semanticScores: Map<string, number> | undefined
+    if (opts.query) {
+      const { parseDecisionsTable } = await import('@chronicle/core')
+      const { rows } = parseDecisionsTable(processed)
+      const scores = await buildSemanticScores(rows.map(r => r.line), opts.query)
+      if (scores) semanticScores = scores
+    }
+
+    processed = rankDecisions(processed, { files: fileList, topN, semanticScores })
     if (processed) sections.push(processed)
   }
 

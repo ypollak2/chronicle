@@ -87,20 +87,66 @@ export function rankDecisions(content: string, opts: {
   files?: string[]
   recentFiles?: string[]
   topN?: number
+  semanticScores?: Map<string, number>  // row text hash → semantic similarity 0–1
 }): string {
   const { header, rows } = parseDecisionsTable(content)
   if (rows.length === 0) return content
 
-  const scored = rows.map(r => ({
-    ...r,
-    score: scoreRow(r.line, opts),
-  }))
+  const scored = rows.map(r => {
+    const heuristic = scoreRow(r.line, opts)
+    // Blend semantic score when available (S3: Phase 2 ranker)
+    const semKey = r.line.trim()
+    const semScore = opts.semanticScores?.get(semKey) ?? null
+    const blended = semScore !== null
+      ? 0.6 * semScore * 10 + 0.4 * heuristic   // scale semantic to ~heuristic range
+      : heuristic
+    return { ...r, score: blended }
+  })
 
   scored.sort((a, b) => b.score - a.score)
 
   const kept = opts.topN && opts.topN > 0 ? scored.slice(0, opts.topN) : scored
 
   return header + '\n' + kept.map(r => r.line).join('\n')
+}
+
+/**
+ * Build a semantic score map for decision rows given a query.
+ * Returns null if embeddings unavailable (graceful fallback to heuristic-only).
+ *
+ * Async — must be awaited before passing to rankDecisions().
+ */
+export async function buildSemanticScores(
+  rows: string[],
+  query: string
+): Promise<Map<string, number> | null> {
+  // Lazy import to avoid loading embeddings module when not needed.
+  // Use Function constructor to prevent TypeScript from type-checking the optional dynamic import.
+  // eslint-disable-next-line no-new-func
+  let embedFns: typeof import('./embeddings.js') | null = null
+  try {
+    embedFns = await (new Function('s', 'return import(s)'))('./embeddings.js') as typeof import('./embeddings.js')
+  } catch {
+    return null
+  }
+
+  const queryVec = await embedFns.embed(query)
+  if (!queryVec) return null
+
+  // Build a temporary in-memory cache (no persistence — query embedding is transient)
+  const tempCache: import('./embeddings.js').EmbeddingCache = { model: '', entries: {} }
+  const embedded = await embedFns.getEmbeddings(rows, tempCache)
+  if (!embedded) return null
+
+  const scores = new Map<string, number>()
+  for (let i = 0; i < rows.length; i++) {
+    const vec = embedded[i]?.vec
+    if (vec) {
+      const sim = embedFns.cosineSimilarity(queryVec, vec)
+      scores.set(rows[i].trim(), (sim + 1) / 2)   // normalize -1..1 → 0..1
+    }
+  }
+  return scores
 }
 
 /**

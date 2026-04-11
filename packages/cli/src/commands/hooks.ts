@@ -94,7 +94,19 @@ export async function cmdCapture(opts: { fromCommit: string; llm?: string }) {
       appendToStore(root, 'decisions', row)
     }
 
-    appendLog(logFile, `[${new Date().toISOString()}] captured commit ${commits[0].hash.slice(0, 8)}: ${results.filter(r => r.isDecision).length} decisions`)
+    const decisionCount = results.filter(r => r.isDecision).length
+    appendLog(logFile, `[${new Date().toISOString()}] captured commit ${commits[0].hash.slice(0, 8)}: ${decisionCount} decisions`)
+
+    // S4: Incremental vector index — embed only new decisions (cache handles deduplication)
+    if (decisionCount > 0) {
+      try {
+        const { buildEmbeddingIndex } = await import('@chronicle/core')
+        const indexed = await buildEmbeddingIndex(root)
+        if (indexed !== null) {
+          appendLog(logFile, `[${new Date().toISOString()}] embedding index updated (${indexed} docs)`)
+        }
+      } catch { /* embeddings optional — skip silently */ }
+    }
   } catch (err) {
     appendLog(logFile, `[${new Date().toISOString()}] ERROR: ${err}`)
   }
