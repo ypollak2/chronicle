@@ -3,7 +3,6 @@
 > AI-native development memory — markdown RAG for every AI coding tool
 
 [![CI](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml/badge.svg)](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/chronicle-dev)](https://www.npmjs.com/package/chronicle-dev)
 [![PyPI](https://img.shields.io/pypi/v/chronicle-dev)](https://pypi.org/project/chronicle-dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
