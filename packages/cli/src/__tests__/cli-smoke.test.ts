@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync } from 'fs'
 import { join } from 'path'
 import os from 'os'
 import { initStore, writeStore, lorePath, addContextFact } from '@chronicle/core'
@@ -348,18 +348,22 @@ describe('chronicle process', () => {
   })
 
   it('exits 1 when .lore/ is missing', async () => {
-    const emptyRoot = makeTempDir()
-    process.chdir(emptyRoot)
+    // Temporarily hide .lore/ rather than cd-ing to a separate tmpdir.
+    // cd-based approaches are fragile in CI when os.tmpdir() sits under the
+    // checkout root (GitHub Actions), causing findLoreRoot() to find .lore/ anyway.
+    const loreDir = join(root, '.lore')
+    const loreHidden = loreDir + '-hidden'
+    renameSync(loreDir, loreHidden)
+
     const { cmdProcess } = await import('../commands/process.js')
 
     let exitCode: number | undefined
-    const err = await captureError(async () => {
-      exitCode = await withMockedExit(() => cmdProcess({ dryRun: true }))
-    })
+    const origErr = console.error
+    console.error = () => {}
+    exitCode = await withMockedExit(() => cmdProcess({ dryRun: true }))
+    console.error = origErr
 
-    process.chdir(root)
-    rmSync(emptyRoot, { recursive: true, force: true })
-    // Either error message or exit code should indicate failure
-    expect(err.toLowerCase().includes('not found') || exitCode === 1).toBe(true)
+    renameSync(loreHidden, loreDir)  // restore before afterEach cleanup
+    expect(exitCode).toBe(1)
   })
 })
