@@ -117,6 +117,62 @@ export function getRelatedRows(content: string, targetTitle: string): string[] {
 }
 
 /**
+ * Render a relation graph as a Mermaid `flowchart TD` block.
+ * Nodes are decision titles (sanitized). Edge labels reflect relation type.
+ * Returns an empty string when the graph has no edges.
+ *
+ * @example
+ * ```
+ * flowchart TD
+ *   A["Use JWT"] -->|depends on| B["Add Redis"]
+ *   C["Migrate API"] -->|supersedes| A
+ * ```
+ */
+export function buildMermaidDAG(graph: Map<string, DecisionRelations>): string {
+  if (graph.size === 0) return ''
+
+  const lines: string[] = ['flowchart TD']
+  const nodeId = new Map<string, string>()
+  let counter = 0
+
+  const getId = (title: string): string => {
+    if (!nodeId.has(title)) nodeId.set(title, `N${counter++}`)
+    return nodeId.get(title)!
+  }
+
+  // Collect all edges
+  const edges: Array<{ from: string; to: string; label: string }> = []
+  for (const [title, rels] of graph) {
+    for (const dep of rels.dependsOn ?? []) {
+      edges.push({ from: title, to: dep, label: 'depends on' })
+    }
+    for (const sup of rels.supersedes ?? []) {
+      edges.push({ from: title, to: sup, label: 'supersedes' })
+    }
+    for (const rel of rels.relatedTo ?? []) {
+      edges.push({ from: title, to: rel, label: 'related to' })
+    }
+  }
+
+  if (edges.length === 0) return ''
+
+  // Emit node labels first
+  const allTitles = new Set<string>()
+  for (const { from, to } of edges) { allTitles.add(from); allTitles.add(to) }
+  for (const title of allTitles) {
+    const safe = title.replace(/"/g, "'").slice(0, 50)
+    lines.push(`  ${getId(title)}["${safe}"]`)
+  }
+
+  // Emit edges
+  for (const { from, to, label } of edges) {
+    lines.push(`  ${getId(from)} -->|${label}| ${getId(to)}`)
+  }
+
+  return lines.join('\n')
+}
+
+/**
  * Update a decisions.md table: find the row whose title matches titleKey
  * and return the updated content with the new relation applied.
  */

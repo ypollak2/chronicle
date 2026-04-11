@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { findLoreRoot, readStore, writeStore, applyRelationToContent, buildRelationGraph, extractTitleFromRow } from '@chronicle/core'
+import { findLoreRoot, readStore, writeStore, applyRelationToContent, buildRelationGraph, buildMermaidDAG, extractTitleFromRow } from '@chronicle/core'
 import type { RelationType } from '@chronicle/core'
 
 export async function cmdRelate(opts: {
@@ -8,6 +8,7 @@ export async function cmdRelate(opts: {
   supersedes?: string
   relatedTo?: string
   list?: boolean
+  diagram?: boolean
 }) {
   const root = findLoreRoot()
   if (!root) {
@@ -21,7 +22,22 @@ export async function cmdRelate(opts: {
     process.exit(1)
   }
 
-  // --list: show the full relation graph
+  // --diagram: render the relation graph as a Mermaid flowchart
+  if (opts.diagram) {
+    const graph = buildRelationGraph(content)
+    const mermaid = buildMermaidDAG(graph)
+    if (!mermaid) {
+      console.log(chalk.dim('  No decision relations defined yet.'))
+      console.log(chalk.dim('  Use `chronicle relate "<title>" --depends-on "<title>"` to add one.'))
+      return
+    }
+    console.log('\n```mermaid')
+    console.log(mermaid)
+    console.log('```\n')
+    return
+  }
+
+  // --list: show the full relation graph as text
   if (opts.list) {
     const graph = buildRelationGraph(content)
     if (graph.size === 0) {

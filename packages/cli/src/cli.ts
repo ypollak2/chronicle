@@ -21,6 +21,7 @@ import { cmdContext } from './commands/context.js'
 import { cmdWho } from './commands/who.js'
 import { cmdVerify } from './commands/verify.js'
 import { cmdProcess } from './commands/process.js'
+import { cmdStatus } from './commands/status.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -150,6 +151,7 @@ program
   .option('--supersedes <title>', 'this decision supersedes an older one')
   .option('--related-to <title>', 'this decision is related to another')
   .option('--list', 'show all decision relationships')
+  .option('--diagram', 'render decision DAG as a Mermaid flowchart')
   .action((title, opts) => cmdRelate({ title, ...opts }))
 
 const context = program.command('context').description('Manage project context (.lore/context.md)')
@@ -183,6 +185,12 @@ program
 const hooks = program.command('hooks').description('Manage git hooks')
 hooks.command('install').description('Install post-commit and prepare-commit-msg hooks').action(cmdHooksInstall)
 hooks.command('remove').description('Remove Chronicle hooks from git').action(cmdHooksRemove)
+
+program
+  .command('status')
+  .description('Single-line health summary: decisions, ADRs, sessions, unprocessed commits')
+  .option('--json', 'output machine-readable JSON')
+  .action(cmdStatus)
 
 program
   .command('verify')

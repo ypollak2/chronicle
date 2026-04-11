@@ -6,6 +6,8 @@ import {
   findLoreRoot, initStore, readStore, writeStore, appendToStore,
   writeDeepDecision, listSessions, lorePath, LORE_DIR
 } from '../store.js'
+import { buildMermaidDAG } from '../relations.js'
+import type { DecisionRelations } from '../relations.js'
 
 function makeTempDir(): string {
   const dir = join(os.tmpdir(), `chronicle-test-${Date.now()}`)
@@ -119,5 +121,47 @@ describe('store', () => {
       expect(sessions[0]).toBe('2025-03-01.md')
       expect(sessions[2]).toBe('2025-01-01.md')
     })
+  })
+})
+
+// ── buildMermaidDAG ───────────────────────────────────────────────────────────
+
+describe('buildMermaidDAG', () => {
+  it('returns empty string for empty graph', () => {
+    expect(buildMermaidDAG(new Map())).toBe('')
+  })
+
+  it('returns empty string when no edges exist', () => {
+    const graph = new Map<string, DecisionRelations>([['A', {}]])
+    expect(buildMermaidDAG(graph)).toBe('')
+  })
+
+  it('renders depends-on edge', () => {
+    const graph = new Map<string, DecisionRelations>([
+      ['Use JWT', { dependsOn: ['Add Redis'] }],
+    ])
+    const out = buildMermaidDAG(graph)
+    expect(out).toContain('flowchart TD')
+    expect(out).toContain('depends on')
+    expect(out).toContain('Use JWT')
+    expect(out).toContain('Add Redis')
+  })
+
+  it('renders supersedes and related-to edges', () => {
+    const graph = new Map<string, DecisionRelations>([
+      ['New Auth', { supersedes: ['Old Auth'], relatedTo: ['Session store'] }],
+    ])
+    const out = buildMermaidDAG(graph)
+    expect(out).toContain('supersedes')
+    expect(out).toContain('related to')
+  })
+
+  it('sanitizes quotes in titles', () => {
+    const graph = new Map<string, DecisionRelations>([
+      ['Use "fast" cache', { dependsOn: ['Add Redis'] }],
+    ])
+    const out = buildMermaidDAG(graph)
+    expect(out).not.toContain('"fast"')  // double quotes replaced with single
+    expect(out).toContain("'fast'")
   })
 })
