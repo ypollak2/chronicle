@@ -6,6 +6,58 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.12.0] — 2026-04-12
+
+### Added
+
+**`chronicle status` command**
+- Single-line health summary: `◆ chronicle │ N decisions · N rejected · N ADRs · N sessions │ ✓ N unprocessed`
+- Shows `· N low-confidence` and `· ⚠ N extraction errors` when non-zero
+- `--json` flag for machine-readable output (CI, scripting, status bars)
+
+**Decision DAG — Mermaid renderer (`chronicle relate --diagram`)**
+- `buildMermaidDAG(graph)` renders the full decision relation graph as a `flowchart TD` Mermaid block
+- Labeled edges: `depends-on` (solid), `supersedes` (dashed), `related-to` (dotted)
+- Sanitizes double-quotes in decision titles; handles all edge types and isolated nodes
+
+**Confidence threshold filtering (`chronicle process --min-confidence`)**
+- `--min-confidence <n>` (default `0.5`) — decisions below threshold are quarantined to `.lore/low-confidence.md` rather than discarded or silently accepted
+- "Preserve but quarantine" pattern: low-confidence results remain reviewable
+- `.lore/low-confidence.md` added to store structure (`STORE_FILES` map in `@chronicle/core`)
+- `chronicle status` surfaces low-confidence count
+
+**Extraction error tracking**
+- `callWithRetry` accepts an optional `ctx: { errors: number }` ref threaded through concurrent batches
+- On exhaustion (3 failed attempts), `ctx.errors` is incremented — distinguishes "no decisions found" from "LLM returned malformed JSON"
+- `chronicle process` passes `extractionCtx` and logs `errors:N` to `.lore/process.log`
+- `chronicle status` reads the last log entry and surfaces extraction errors
+
+**GitHub Actions job summary**
+- `chronicle.yml` writes a markdown table to `$GITHUB_STEP_SUMMARY` after each `chronicle process` run
+- Table shows: decisions, rejections, ADRs, sessions, unprocessed commits, low-confidence, extraction errors
+
+### Changed
+
+- `evolution` eras now sort decisions by risk level (high → medium → low) before rendering
+- `renderEvolutionMarkdown` hides the "Most changed files" section when decisions exist — file churn is noise when decisions tell the story
+- `getDecisionsInRange` now correctly filters by date range; handles both legacy format (title in col[0]) and current format (date in col[0])
+- `chronicle inject` uses the two most-recent evolution eras (previously used the oldest era)
+
+### Fixed
+
+- Removed `'two-pass'` from `ExtractionStrategy` type — it was typed as valid but threw `"not implemented"` at runtime
+- `chronicle status` crash: `'low-confidence'` was missing from `STORE_FILES` map, causing `lorePath(root, undefined)` at runtime
+
+### Tests
+
+- New `semantic-search.test.ts` — 7 tests covering null embed fallback, empty corpus, hybrid mode, `buildEmbeddingIndex`
+- New `cli-smoke.test.ts` freshness block — 3 tests: unprocessed detection, cache-hit zero, exit-1 on lag
+- `callWithRetry` ctx tests — 6 new tests: success, empty `[]`, retry-then-succeed, exhaustion increments ctx, `[]` does not increment ctx, accumulation across batches
+- `evolution.test.ts` — 4 new tests: risk ordering, keyFiles suppression when decisions exist, keyFiles shown when no decisions, date-range filtering
+- Total: 202 tests passing
+
+---
+
 ## [0.9.0] — 2026-04-11
 
 ### Added
@@ -283,7 +335,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- Phase 8 (v3): Two-pass extraction (cheap LLM filter → quality model for complex decisions)
+- Two-pass extraction (cheap LLM filter → quality model for complex decisions) — deferred until confidence gating is stable
 
 ---
 
@@ -333,5 +385,15 @@ Initial release of Chronicle — AI-native development memory.
 - Strategy pattern in extractor: v1 ships today, v2/v3 are drop-in replacements
 - Python package delegates to Node — single source of truth, no duplication
 
-[Unreleased]: https://github.com/ypollak2/chronicle/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ypollak2/chronicle/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/ypollak2/chronicle/compare/v0.9.1...v0.12.0
+[0.9.1]: https://github.com/ypollak2/chronicle/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/ypollak2/chronicle/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/ypollak2/chronicle/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/ypollak2/chronicle/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/ypollak2/chronicle/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/ypollak2/chronicle/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/ypollak2/chronicle/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ypollak2/chronicle/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ypollak2/chronicle/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ypollak2/chronicle/releases/tag/v0.1.0
