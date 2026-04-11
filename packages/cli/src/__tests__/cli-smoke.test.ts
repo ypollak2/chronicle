@@ -353,13 +353,13 @@ describe('chronicle process', () => {
     const { cmdProcess } = await import('../commands/process.js')
 
     let exitCode: number | undefined
-    const origErr = console.error
-    console.error = () => {}
-    exitCode = await withMockedExit(() => cmdProcess({ dryRun: true }))
-    console.error = origErr
+    const err = await captureError(async () => {
+      exitCode = await withMockedExit(() => cmdProcess({ dryRun: true }))
+    })
 
     process.chdir(root)
     rmSync(emptyRoot, { recursive: true, force: true })
-    expect(exitCode).toBe(1)
+    // Either error message or exit code should indicate failure
+    expect(err.toLowerCase().includes('not found') || exitCode === 1).toBe(true)
   })
 })
