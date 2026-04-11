@@ -84,12 +84,13 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
     sections.push(...getRelevantDeepADRs(root, opts.files.split(',')))
   }
 
-  // Evolution — always include a compact version (first era summary only)
+  // Evolution — inject the two most recent eras (last 2 sections split by ---)
+  // Using the tail ensures AI context reflects current architecture, not founding decisions
   const evolution = readStore(root, 'evolution')
   if (evolution) {
-    // Inject only the first era + header to keep token count low
-    const compact = evolution.split('---')[0]?.trim()
-    if (compact) sections.push(compact)
+    const eras = evolution.split('---').map(s => s.trim()).filter(Boolean)
+    const recent = eras.slice(-2).join('\n\n---\n\n')
+    if (recent) sections.push(recent)
   }
 
   // Sessions: rolling history index + most recent raw session

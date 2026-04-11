@@ -17,7 +17,7 @@ export interface ExtractionResult {
 export type LLMProvider = (prompt: string) => Promise<string>
 
 // The prompt sent to the cheap LLM (Haiku/Flash) for each commit batch
-export function buildExtractionPrompt(commits: CommitMeta[]): string {
+export function buildExtractionPrompt(commits: CommitMeta[], opts: { truncated?: boolean } = {}): string {
   const commitSummaries = commits.map(c => `
 ### ${c.date.slice(0, 10)} — ${c.subject}
 Hash: ${c.hash.slice(0, 7)}
@@ -30,37 +30,50 @@ ${c.diff}
 \`\`\`
 `).join('\n---\n')
 
+  const truncationNote = opts.truncated
+    ? '\nNOTE: Some diffs were truncated due to size. Base your analysis on the subject, body, and visible diff only.\n'
+    : ''
+
   return `You are analyzing git commits to extract architectural decisions for a development knowledge base.
 
 For each commit, extract:
-- Was this an architectural/design decision worth documenting? (skip refactors, typo fixes, dependency bumps)
+- Was this an architectural/design decision worth documenting? (skip refactors, typo fixes, dependency bumps, version bumps, whitespace)
 - What was decided and WHY (the rationale, not just what changed)
 - What files/modules are affected
 - Risk level: high (many dependents, hard to reverse), medium, low
 - Was anything rejected/reverted? If so, why?
 - Is this decision complex enough to warrant a full ADR document? (true if: affects 3+ modules, hard to reverse, has rejected alternatives)
-- Confidence: how certain are you this is a genuine architectural decision? (0.0 = uncertain, likely a refactor or bump; 1.0 = clearly architectural with explicit rationale)
+- Confidence: how certain are you this is a genuine architectural decision? (0.0 = refactor/bump/chore, 1.0 = clearly architectural with explicit rationale)
 
-Return a JSON array, one object per commit:
-[
-  {
-    "hash": "abc123",
-    "isDecision": true,
-    "isRejection": false,
-    "title": "Move task queue from in-process to Redis",
-    "affects": ["workers/", "config/queue.ts"],
-    "risk": "high",
-    "confidence": 0.95,
-    "rationale": "In-process queue lost jobs on crash. Redis provides durability and horizontal scaling.",
-    "rejected": null,
-    "isDeep": true
-  }
-]
+## Worked examples
 
-Commits to analyze:
+### Example 1 — genuine architectural decision
+Commit: "switch task queue from in-memory to Redis"
+Body: "In-process queue lost jobs on crash. Evaluated RabbitMQ but ops didn't want another broker."
+Files: workers/queue.ts, config/redis.ts, docker-compose.yml
+→ Output:
+{"hash":"a1b2c3d","isDecision":true,"isRejection":false,"title":"Switch task queue from in-memory to Redis","affects":["workers/queue.ts","config/redis.ts"],"risk":"high","confidence":0.95,"rationale":"In-process queue lost jobs on crash; Redis provides durability and horizontal scale. RabbitMQ was rejected — ops overhead.","rejected":null,"isDeep":true}
+
+### Example 2 — rejected approach / revert
+Commit: "revert: remove GraphQL layer added in #42"
+Body: "Team velocity dropped 40% due to schema maintenance. Back to REST."
+Files: src/api/graphql.ts, src/api/resolvers/
+→ Output:
+{"hash":"d4e5f6a","isDecision":false,"isRejection":true,"title":"Revert GraphQL API layer","affects":["src/api/"],"risk":"medium","confidence":0.88,"rationale":"","rejected":"GraphQL removed: schema maintenance overhead cut team velocity 40%. Reverted to REST.","isDeep":false}
+
+### Example 3 — noise commit (skip)
+Commit: "fix typo in README"
+Body: ""
+Files: README.md
+→ Output:
+{"hash":"b7c8d9e","isDecision":false,"isRejection":false,"title":"","affects":[],"risk":"low","confidence":0.02,"rationale":"","rejected":null,"isDeep":false}
+
+## Commits to analyze
+${truncationNote}
 ${commitSummaries}
 
-Return only valid JSON. No markdown, no explanation.`
+Return a JSON array with one object per commit, in the same order as the commits above.
+Return only valid JSON. No markdown fences, no explanation outside the array.`
 }
 
 export type ExtractionStrategy = 'simple' | 'clustered' | 'two-pass'
@@ -211,11 +224,26 @@ function mergeSingletonBatches(commits: CommitMeta[]): CommitMeta[][] {
   return batches
 }
 
+// Max chars for a single diff before we signal truncation to the LLM
+const MAX_DIFF_CHARS = 3000
+
+// Truncate oversized diffs and return a flag indicating whether any were cut
+function prepareBatch(commits: CommitMeta[]): { batch: CommitMeta[]; truncated: boolean } {
+  let truncated = false
+  const batch = commits.map(c => {
+    if (c.diff.length <= MAX_DIFF_CHARS) return c
+    truncated = true
+    return { ...c, diff: c.diff.slice(0, MAX_DIFF_CHARS) + '\n... [TRUNCATED]' }
+  })
+  return { batch, truncated }
+}
+
 async function strategyClustered(commits: CommitMeta[], llm: LLMProvider, concurrency: number): Promise<ExtractionResult[]> {
   const clusters = clusterCommitsByFileOverlap(commits)
-  const tasks = clusters.map(cluster => () =>
-    llm(buildExtractionPrompt(cluster)).then(parseExtractionResponse)
-  )
+  const tasks = clusters.map(cluster => () => {
+    const { batch, truncated } = prepareBatch(cluster)
+    return callWithRetry(buildExtractionPrompt(batch, { truncated }), llm)
+  })
   const batchResults = await runConcurrent(tasks, concurrency)
   return batchResults.flat()
 }
@@ -241,9 +269,10 @@ async function strategySimple(commits: CommitMeta[], llm: LLMProvider, concurren
   }
   if (batch.length > 0) batches.push(batch)
 
-  const tasks = batches.map(b => () =>
-    llm(buildExtractionPrompt(b)).then(parseExtractionResponse)
-  )
+  const tasks = batches.map(b => () => {
+    const { batch: prepared, truncated } = prepareBatch(b)
+    return callWithRetry(buildExtractionPrompt(prepared, { truncated }), llm)
+  })
   const batchResults = await runConcurrent(tasks, concurrency)
   return batchResults.flat()
 }
@@ -275,5 +304,27 @@ export function parseExtractionResponse(raw: string): ExtractionResult[] {
       if (result !== null) return result
     } catch { /* fall through */ }
   }
+  return []
+}
+
+// Wraps an LLM call with up to maxAttempts retries on malformed JSON.
+// Uses exponential backoff: 1s, 2s, 4s between attempts.
+export async function callWithRetry(
+  prompt: string,
+  llm: LLMProvider,
+  maxAttempts = 3,
+): Promise<ExtractionResult[]> {
+  let lastRaw = ''
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    lastRaw = await llm(prompt)
+    const parsed = parseExtractionResponse(lastRaw)
+    if (parsed.length > 0 || lastRaw.trim() === '[]') return parsed
+
+    // Parse returned [] but raw isn't empty — likely malformed JSON. Retry.
+    if (attempt < maxAttempts) {
+      await new Promise(res => setTimeout(res, 1000 * 2 ** (attempt - 1)))
+    }
+  }
+  // All attempts failed — return empty rather than crashing
   return []
 }

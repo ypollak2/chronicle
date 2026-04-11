@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   parseExtractionResponse, buildExtractionPrompt, extractFromCommits,
-  extractFilesFromDiff, clusterCommitsByFileOverlap,
+  callWithRetry, extractFilesFromDiff, clusterCommitsByFileOverlap,
   type CommitMeta, type ExtractionResult, type ExtractionCache
 } from '../extractor.js'
 
@@ -123,6 +123,61 @@ describe('extractFromCommits', () => {
     mockLLM.mockResolvedValueOnce(JSON.stringify([stubResult()]))
     await extractFromCommits([stubCommit()], mockLLM, { cache })
     expect(stored['abc1234']).toBeDefined()
+  })
+})
+
+// ── callWithRetry ──────────────────────────────────────────────────────────────
+
+describe('callWithRetry', () => {
+  it('returns parsed results on first attempt when LLM returns valid JSON', async () => {
+    const llm = vi.fn().mockResolvedValue(JSON.stringify([stubResult()]))
+    const results = await callWithRetry('prompt', llm)
+    expect(results).toHaveLength(1)
+    expect(llm).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries on malformed JSON and succeeds on second attempt', async () => {
+    const llm = vi.fn()
+      .mockResolvedValueOnce('not valid json at all')
+      .mockResolvedValueOnce(JSON.stringify([stubResult()]))
+    const results = await callWithRetry('prompt', llm, 3)
+    expect(results).toHaveLength(1)
+    expect(llm).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns empty array after all attempts fail', async () => {
+    const llm = vi.fn().mockResolvedValue('still not json')
+    const results = await callWithRetry('prompt', llm, 2)
+    expect(results).toEqual([])
+    expect(llm).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts empty array [] as a valid (non-retry) response', async () => {
+    const llm = vi.fn().mockResolvedValue('[]')
+    const results = await callWithRetry('prompt', llm)
+    expect(results).toEqual([])
+    expect(llm).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── buildExtractionPrompt options ─────────────────────────────────────────────
+
+describe('buildExtractionPrompt options', () => {
+  it('includes truncation note when opts.truncated=true', () => {
+    const prompt = buildExtractionPrompt([stubCommit()], { truncated: true })
+    expect(prompt.toLowerCase()).toContain('truncated')
+  })
+
+  it('omits truncation note when opts.truncated=false', () => {
+    const prompt = buildExtractionPrompt([stubCommit()], { truncated: false })
+    expect(prompt.toLowerCase()).not.toContain('truncated')
+  })
+
+  it('contains few-shot examples for all three cases', () => {
+    const prompt = buildExtractionPrompt([stubCommit()])
+    expect(prompt).toContain('isDecision":true')   // decision example
+    expect(prompt).toContain('isRejection":true')  // rejection example
+    expect(prompt).toContain('"confidence":0.02')  // noise example
   })
 })
 
