@@ -11,6 +11,8 @@ Chronicle builds a living knowledge base inside your repo. It scans your git his
 
 **Just markdown files.**
 
+> **Roadmap:** Chronicle is growing into a full multi-source RAG system — semantic search, multi-repo federation, non-git knowledge ingestion, and a RAG quality eval harness. See [ROADMAP.md](./ROADMAP.md) for the versioned plan.
+
 ---
 
 ## Why
@@ -198,7 +200,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system design, data flows,
 
 ## Contributing
 
-See [CHANGELOG.md](./CHANGELOG.md) for version history and roadmap.
+See [ROADMAP.md](./ROADMAP.md) for the versioned feature plan and what's coming next.
+See [CHANGELOG.md](./CHANGELOG.md) for version history of what's shipped.
 
 ```bash
 git clone https://github.com/ypollak2/chronicle
