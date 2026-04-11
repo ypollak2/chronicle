@@ -9,6 +9,8 @@
 
 Chronicle builds a living knowledge base inside your repo. It scans your git history, captures architectural decisions as you work, and injects compressed context into any AI coding tool — without a vector database, without embeddings, without infrastructure.
 
+**v0.12 — Status command, decision DAG, extraction quality improvements.** See [CHANGELOG.md](./CHANGELOG.md).
+
 **Just markdown files.**
 
 > **Roadmap:** Chronicle is growing into a full multi-source RAG system — semantic search, multi-repo federation, non-git knowledge ingestion, and a RAG quality eval harness. See [ROADMAP.md](./ROADMAP.md) for the versioned plan.
@@ -80,6 +82,9 @@ chronicle inject | aider
 # Install passive capture (runs after every git commit)
 chronicle hooks install
 
+# Check store health at a glance
+chronicle status
+
 # Scan further back when you're ready
 chronicle deepen --depth=1year
 ```
@@ -112,14 +117,15 @@ chronicle inject --format=xml          # XML format for Claude system prompts
 
 ```
 .lore/
-├── index.md          Project summary + constraints
-├── decisions.md      Lightweight index of all decisions
-├── decisions/        Deep ADR files for complex decisions
-├── rejected.md       What was tried and failed ← most valuable
-├── risks.md          High-blast-radius files
-├── evolution.md      System timeline
-├── diagrams/         Mermaid diagrams (auto-generated)
-└── sessions/         Per-session AI summaries
+├── index.md              Project summary + constraints
+├── decisions.md          Lightweight index of all decisions
+├── decisions/            Deep ADR files for complex decisions
+├── rejected.md           What was tried and failed ← most valuable
+├── risks.md              High-blast-radius files
+├── evolution.md          System timeline
+├── low-confidence.md     Quarantined extractions (below threshold)
+├── diagrams/             Mermaid diagrams (auto-generated)
+└── sessions/             Per-session AI summaries
 ```
 
 Commit `.lore/` to git. It's the institutional memory of your codebase.
@@ -177,7 +183,10 @@ Chronicle tools Claude calls automatically:
 | Command | Description |
 |---------|-------------|
 | `chronicle init [--depth=6months\|1year\|all] [--llm=gemini\|anthropic\|openai\|ollama] [--limit=N] [--concurrency=N]` | Bootstrap from git history |
+| `chronicle process [--since=<sha>] [--min-confidence=0.5]` | Process new commits and update `.lore/` |
 | `chronicle inject [--files=<paths>] [--full] [--format=markdown\|xml\|plain]` | Output context to stdout |
+| `chronicle status [--json]` | Health summary: decisions, ADRs, unprocessed commits, errors |
+| `chronicle relate [--diagram]` | Show decision relation graph; `--diagram` renders Mermaid DAG |
 | `chronicle deepen [--depth=1year\|all] [--limit=N]` | Extend scan without reprocessing |
 | `chronicle doctor` | Validate `.lore/` health (files, links, cache, hooks) |
 | `chronicle search <query> [--limit=N] [--json]` | Full-text search across knowledge base |
