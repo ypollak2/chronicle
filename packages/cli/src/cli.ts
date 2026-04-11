@@ -19,6 +19,8 @@ import { cmdMergeDriver } from './commands/merge-driver.js'
 import { cmdRelate } from './commands/relate.js'
 import { cmdContext } from './commands/context.js'
 import { cmdWho } from './commands/who.js'
+import { cmdVerify } from './commands/verify.js'
+import { cmdProcess } from './commands/process.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -181,6 +183,23 @@ program
 const hooks = program.command('hooks').description('Manage git hooks')
 hooks.command('install').description('Install post-commit and prepare-commit-msg hooks').action(cmdHooksInstall)
 hooks.command('remove').description('Remove Chronicle hooks from git').action(cmdHooksRemove)
+
+program
+  .command('verify')
+  .description('Check if .lore/ is up-to-date with recent commits (CI gate)')
+  .option('--max-lag <n>', 'max unprocessed commits before failing', '5')
+  .option('--json', 'output machine-readable JSON')
+  .option('--quiet', 'suppress output, only print errors')
+  .action(cmdVerify)
+
+program
+  .command('process')
+  .description('Process all unprocessed commits and update .lore/ (for CI/GitHub Actions)')
+  .option('-d, --depth <depth>', 'how far back to scan: 1month|3months|6months|1year|all', '1month')
+  .option('--llm <provider>', 'LLM provider: auto|anthropic|openai|gemini|ollama', 'auto')
+  .option('--from-commit <hash>', 'only process commits after this hash (e.g. github.event.before)')
+  .option('--dry-run', 'show what would be processed without making changes')
+  .action(cmdProcess)
 
 // Internal commands (called by hooks/git, not for direct use)
 program

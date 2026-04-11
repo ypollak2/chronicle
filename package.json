@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:python": "cd packages/python && .venv/bin/pytest tests/ -v",
     "test:all": "npm test && npm run test:python",
-    "release": "npm run test:all && npm run build"
+    "sync-python-version": "node scripts/sync-python-version.js",
+    "release": "npm run sync-python-version && npm run test:all && npm run build"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,104 @@
+# Chronicle Auto-Update Workflow
+#
+# Runs on every push to main, processes new commits through chronicle,
+# and commits the updated .lore/ back to the repo.
+#
+# This is what closes the "repo maintains itself" loop:
+#   developer commits → GitHub triggers this workflow → chronicle processes → .lore/ updated
+#
+# Requirements:
+#   - ANTHROPIC_API_KEY secret (or CHRONICLE_LLM=openai + OPENAI_API_KEY)
+#   - Write permissions on the repo (GITHUB_TOKEN has this by default)
+#
+# The commit uses [skip ci] to prevent infinite loop triggering.
+
+name: Chronicle — Update .lore/
+
+on:
+  push:
+    branches: [main]
+    # Don't run on .lore/ updates to prevent infinite loop (belt + suspenders with [skip ci])
+    paths-ignore:
+      - '.lore/**'
+      - '.github/workflows/chronicle.yml'
+
+# Prevent concurrent runs — only one chronicle update at a time
+concurrency:
+  group: chronicle-update
+  cancel-in-progress: false
+
+jobs:
+  update-lore:
+    name: Process commits & update .lore/
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so chronicle can scan commits
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build chronicle
+        run: npm run build
+
+      - name: Initialize .lore/ if missing
+        run: |
+          if [ ! -d ".lore" ]; then
+            echo "No .lore/ found — running chronicle init (first time setup)"
+            npx chronicle init --depth 3months --llm auto
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHRONICLE_LLM: ${{ secrets.CHRONICLE_LLM || 'auto' }}
+
+      - name: Process new commits
+        id: process
+        run: |
+          npx chronicle process \
+            --depth 1month \
+            --from-commit "${{ github.event.before }}" \
+            --llm auto
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CHRONICLE_LLM: ${{ secrets.CHRONICLE_LLM || 'auto' }}
+
+      - name: Check if .lore/ changed
+        id: check
+        run: |
+          if git diff --quiet .lore/; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  .lore/ unchanged — no architectural decisions in this push"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✓  .lore/ has updates to commit"
+            git diff --stat .lore/
+          fi
+
+      - name: Commit updated .lore/
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git config user.name  "chronicle-bot"
+          git config user.email "chronicle-bot@users.noreply.github.com"
+          git add .lore/
+          git commit -m "chore(lore): update .lore/ for commits ${{ github.event.before }}...${{ github.sha }} [skip ci]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify .lore/ freshness (post-update gate)
+        run: npx chronicle verify --max-lag 10

@@ -56,10 +56,11 @@ export function scoreRow(row: string, opts: {
 }): number {
   let score = 0
 
-  // File relevance
+  // File relevance — extract affects column for prefix matching
   const { files = [], recentFiles = [] } = opts
-  score += files.filter(f => row.includes(f)).length * 3
-  score += recentFiles.filter(f => row.includes(f)).length
+  const affectsPaths = row.split('|')[3]?.trim().split(',').map(s => s.trim()).filter(Boolean) ?? []
+  score += files.filter(f => row.includes(f) || affectsPaths.some(p => f.startsWith(p) || p.startsWith(f))).length * 3
+  score += recentFiles.filter(f => row.includes(f) || affectsPaths.some(p => f.startsWith(p) || p.startsWith(f))).length
 
   // Risk bonus
   if (row.includes('| high |') || row.includes('| high|')) score += 2

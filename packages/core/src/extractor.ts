@@ -20,6 +20,7 @@ export type LLMProvider = (prompt: string) => Promise<string>
 export function buildExtractionPrompt(commits: CommitMeta[]): string {
   const commitSummaries = commits.map(c => `
 ### ${c.date.slice(0, 10)} — ${c.subject}
+Hash: ${c.hash.slice(0, 7)}
 ${c.body ? `Body: ${c.body}` : ''}
 Files changed: ${c.diffStat}
 ${c.tags.length ? `Tags: ${c.tags.join(', ')}` : ''}
@@ -100,6 +101,11 @@ export async function extractFromCommits(
       const hash = r.hash ?? uncached[i]?.hash
       if (hash) cache.set(hash, r)
     })
+    // Mark noise commits (zero results) as processed so they're not re-queried
+    const sentinel: ExtractionResult = { isDecision: false, isRejection: false, title: '', affects: [], risk: 'low', confidence: 0, rationale: '', isDeep: false }
+    for (const c of uncached) {
+      if (!cache.has(c.hash)) cache.set(c.hash, { ...sentinel, hash: c.hash })
+    }
   }
   return results
 }
@@ -251,15 +257,23 @@ export interface ExtractionCache {
 }
 
 export function parseExtractionResponse(raw: string): ExtractionResult[] {
-  try {
-    const json = JSON.parse(raw.trim())
-    return Array.isArray(json) ? json : []
-  } catch {
-    // LLM sometimes wraps in markdown code blocks despite instructions
-    const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (match) {
-      try { return JSON.parse(match[1]) } catch { /* fall through */ }
-    }
-    return []
+  const toValidItems = (json: unknown): ExtractionResult[] | null => {
+    if (!Array.isArray(json)) return null
+    return json.filter(item => item !== null && typeof item === 'object' && !Array.isArray(item)) as ExtractionResult[]
   }
+
+  try {
+    const result = toValidItems(JSON.parse(raw.trim()))
+    if (result !== null) return result
+  } catch { /* fall through to code block extraction */ }
+
+  // LLM sometimes wraps in markdown code blocks despite instructions
+  const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (match) {
+    try {
+      const result = toValidItems(JSON.parse(match[1]))
+      if (result !== null) return result
+    } catch { /* fall through */ }
+  }
+  return []
 }

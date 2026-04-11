@@ -78,9 +78,10 @@ function matchesCodeownersPattern(filePath: string, pattern: string): boolean {
     .replace(/\u0000/g, '.*')               // ** → anything
     .replace(/\?/g, '[^/]')                  // ? → one non-slash char
   // If pattern doesn't contain /, treat as a basename match
+  const suffix = reStr.endsWith('/') ? '' : '(/|$)'
   const anchored = pattern.includes('/') ? `^${reStr}` : `(^|/)${reStr}`
   try {
-    return new RegExp(`${anchored}(/|$)`).test(filePath)
+    return new RegExp(`${anchored}${suffix}`).test(filePath)
   } catch {
     return false
   }

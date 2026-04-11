@@ -34,7 +34,23 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - `chronicle inject --files` now includes a `## File Ownership` section when ownership is defined
 - `loadOwnership`, `getOwnersForFile`, `parseAuthorFromRow`, `setAuthorOnRow`, `buildOwnershipSection`, `writeLoreOwnership` exported from `@chronicle/core`
 
+**CI / Server-side automation**
+- `chronicle verify` — CI gate: exits 1 when `.lore/` lags by more than `--max-lag` commits (default 5); `--json` for machine-readable output
+- `chronicle process` — batch processor for GitHub Actions: processes all uncached commits in one pass, writes `.lore/process.log`, exits 1 on LLM errors
+- `.github/workflows/chronicle.yml` — official GitHub Actions workflow that triggers on push to main, runs `chronicle process`, and commits updated `.lore/` back with `[skip ci]` — closes the "repo maintains itself" loop
+
+**Comprehensive test suite (149 tests across 9 suites)**
+- `extraction-parsing.test.ts` — 21 tests covering malformed JSON, HTML-wrapped responses, null fields, truncated output, code block variations, and prompt completeness
+- `ranker.test.ts` — 26 tests for `parseDecisionsTable`, `scoreRow` (file match, age decay, risk/confidence bonus), `rankDecisions` (sort order, semantic blend, topN), `estimateTokens`, `trimToTokenBudget`
+- `rag-quality.test.ts` — 28 behavioral tests: "does the store contain the right knowledge?" — decisions completeness, rejections format, risks content, evolution eras, deep ADR structure, inject output ranking, staleness, token budget, relations DAG, business context
+- `pipeline.test.ts` — 10 end-to-end integration tests using real git repos (temp fixture) + mock LLM: feature commit → decisions.md, security → high-risk, rejection → rejected.md, noise filtering, store write correctness, deep ADR creation, cache prevents re-processing
+- `fixtures.ts` — shared fixture factory: `buildProjectRepo()` (7-commit git repo covering all change types), `buildPopulatedLore()` (pre-populated `.lore/` for inject tests), `buildMockLLM()` (keyword-aware mock returning realistic ExtractionResults)
+
 ### Fixed
+- `parseExtractionResponse` now filters non-object elements from arrays (LLM hallucination of `[1, 2, 3]` no longer passes through as decisions)
+- `scoreRow` recentFiles matching now uses prefix matching: a row affecting `src/auth/` correctly matches a recent file `src/auth/jwt.ts`
+- Extraction cache now marks noise commits (zero results) as processed, preventing re-querying on the second pass
+- `buildExtractionPrompt` now includes the commit hash in the prompt so the LLM can return it in each result object (enabling accurate cache keying)
 - Evolution test updated: `buildEvolution` correctly synthesizes a single `v0.1 (initial)` era for repos with no git tags (time-based era synthesis was added in v0.3.0 but the test expectation was not updated)
 
 ---

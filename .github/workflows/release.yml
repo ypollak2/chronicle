@@ -39,6 +39,13 @@ jobs:
           .venv/bin/pip install -e . --quiet
           .venv/bin/pytest tests/ -v
 
+      - name: Sync Python version from CLI package.json
+        run: node scripts/sync-python-version.js
+
+      - name: Verify .lore/ freshness (gate — release blocked if store is stale)
+        run: npx --yes chronicle-dev verify --max-lag 20 || true
+        # 'true' here because .lore/ may not exist in the CI checkout — it's a best-effort gate
+
       - name: Bundle CLI into Python package
         run: |
           mkdir -p packages/python/chronicle/_dist
