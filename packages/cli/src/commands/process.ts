@@ -39,10 +39,6 @@ export async function cmdProcess(opts: {
   }
 
   const depth = (opts.depth ?? '1month') as ScanDepth
-  const { makeLLMProvider } = await import('../llm.js')
-  const { formatRejectionEntry, formatDeepADR, slugify } = await import('../format.js')
-
-  const llm = makeLLMProvider(opts.llm ?? process.env.CHRONICLE_LLM ?? 'auto')
   const cache = createFileCache(root)
 
   // Collect commits to process
@@ -69,6 +65,10 @@ export async function cmdProcess(opts: {
     if (uncached.length > 10) console.log(chalk.dim(`  ... and ${uncached.length - 10} more`))
     return
   }
+
+  const { makeLLMProvider } = await import('../llm.js')
+  const { formatRejectionEntry, formatDeepADR, slugify } = await import('../format.js')
+  const llm = makeLLMProvider(opts.llm ?? process.env.CHRONICLE_LLM ?? 'auto')
 
   console.log(chalk.cyan(`⟳  Processing ${uncached.length} commits...`))
 
