@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
 
       - uses: actions/setup-python@v5
         with:
@@ -59,7 +60,14 @@ jobs:
           .venv/bin/pip install hatchling twine --quiet
           .venv/bin/python -m hatchling build
 
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm publish --workspaces --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           cd packages/python
           .venv/bin/twine upload dist/* --non-interactive
@@ -68,6 +76,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           body_path: CHANGELOG.md
