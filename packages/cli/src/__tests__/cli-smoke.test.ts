@@ -305,8 +305,12 @@ describe('chronicle verify', () => {
   })
 
   it('exits 1 when .lore/ is missing', async () => {
-    const emptyRoot = makeTempDir()
-    process.chdir(emptyRoot)
+    // Use rename-based isolation (same as chronicle process test) to avoid
+    // CI environments where os.tmpdir() resolves under the checkout root.
+    const loreDir = join(root, '.lore')
+    const loreHidden = loreDir + '-hidden'
+    renameSync(loreDir, loreHidden)
+
     const { cmdVerify } = await import('../commands/verify.js')
 
     let exitCode: number | undefined
@@ -318,8 +322,7 @@ describe('chronicle verify', () => {
     console.log = origLog
     console.error = origErr
 
-    process.chdir(root)  // restore before cleanup
-    rmSync(emptyRoot, { recursive: true, force: true })
+    renameSync(loreHidden, loreDir)  // restore before afterEach cleanup
     expect(exitCode).toBe(1)
   })
 })
