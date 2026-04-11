@@ -43,78 +43,126 @@ export function renderGraphHtml(data: GraphData, projectName: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chronicle Graph — ${projectName}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
+  :root {
+    --bg: #0f1419; --surface: #171c22; --surface-hi: #1b2026; --surface-top: #252a30;
+    --border: rgba(255,255,255,0.06); --primary: #81da8c; --primary-dim: #2f8743;
+    --text: #bfcabb; --text-hi: #e8ece7; --text-lo: #6b7280; --mono: ui-monospace, 'Cascadia Code', monospace;
+    --red: #f85149; --amber: #d29922; --green: #3fb950;
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
-  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column }
-  header { padding: 14px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; flex-shrink: 0 }
-  header h1 { font-size: 16px; color: #e6edf3 }
-  header .stats { font-size: 12px; color: #8b949e; margin-left: auto; display: flex; gap: 16px }
-  header .stat span { color: #e6edf3; font-weight: 600 }
-  .tabs { display: flex; gap: 0; border-bottom: 1px solid #30363d; flex-shrink: 0; padding: 0 24px }
-  .tab { padding: 10px 16px; font-size: 13px; cursor: pointer; border: none; background: none;
-          color: #8b949e; border-bottom: 2px solid transparent; transition: color .15s }
-  .tab:hover { color: #c9d1d9 }
-  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff }
+  body { font: 14px/1.5 'Inter', sans-serif; background: var(--bg); color: var(--text);
+         height: 100vh; display: flex; flex-direction: column; overflow: hidden }
+  .top-bar { background: var(--surface); padding: 0 24px; height: 52px; display: flex;
+              align-items: center; gap: 16px; flex-shrink: 0; border-bottom: 1px solid var(--border) }
+  .brand { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 700;
+           color: var(--primary); letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px }
+  .top-stats { font-size: 11px; color: var(--text-lo); margin-left: auto; display: flex; gap: 20px;
+               font-family: var(--mono) }
+  .top-stats b { color: var(--text-hi); font-weight: 600 }
+  .back-link { font-size: 12px; color: var(--text-lo); text-decoration: none; font-family: var(--mono);
+               padding: 4px 10px; border-radius: 4px; background: var(--surface-hi);
+               transition: color .15s, background .15s }
+  .back-link:hover { color: var(--primary); background: var(--surface-top) }
+  .tabs { display: flex; gap: 0; background: var(--surface); flex-shrink: 0;
+          padding: 0 24px; border-bottom: 1px solid var(--border) }
+  .tab { padding: 10px 18px; font-size: 12px; font-family: var(--mono); cursor: pointer;
+         border: none; background: none; color: var(--text-lo);
+         border-bottom: 2px solid transparent; transition: color .15s; letter-spacing: .04em }
+  .tab:hover { color: var(--text) }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary) }
   .panel { display: none; flex: 1; overflow: hidden }
   .panel.active { display: flex; flex-direction: column }
   #topology-panel { position: relative }
   #graph-svg { width: 100%; height: 100%; cursor: grab }
   #graph-svg:active { cursor: grabbing }
   .node circle { stroke-width: 1.5; transition: r .2s }
-  .node text { pointer-events: none; font-size: 11px; fill: #e6edf3; text-shadow: 0 1px 3px #0d1117 }
-  .link { stroke: #30363d; stroke-opacity: .8 }
-  .tooltip { position: absolute; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
-              padding: 10px 14px; font-size: 12px; pointer-events: none; max-width: 280px;
-              line-height: 1.6; display: none; z-index: 10 }
-  .tooltip strong { color: #e6edf3; display: block; margin-bottom: 4px }
-  .tooltip .risk-high { color: #f85149 } .tooltip .risk-medium { color: #d29922 }
-  .tooltip .risk-low { color: #3fb950 } .tooltip .risk-none { color: #8b949e }
-  .legend { position: absolute; bottom: 16px; left: 16px; background: #161b22; border: 1px solid #30363d;
-             border-radius: 6px; padding: 10px 14px; font-size: 12px }
-  .legend-title { color: #8b949e; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em }
-  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0 }
-  #hotspots-panel { overflow-y: auto; padding: 24px }
-  .hotspots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1100px }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px }
-  .card h3 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px }
-  .hs-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #21262d }
+  .node text { pointer-events: none; font-size: 11px; fill: var(--text-hi);
+               font-family: var(--mono); text-shadow: 0 1px 4px var(--bg) }
+  .link { stroke: var(--surface-top); stroke-opacity: .9 }
+  #empty-state { display: none; flex: 1; flex-direction: column; align-items: center;
+                 justify-content: center; color: var(--text-lo); text-align: center; gap: 14px }
+  .empty-icon { font-size: 44px; opacity: .2; color: var(--primary) }
+  .empty-title { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; color: var(--text) }
+  .empty-body { font-size: 13px; color: var(--text-lo) }
+  .empty-body code { font-family: var(--mono); background: var(--surface); padding: 2px 8px;
+                     border-radius: 4px; color: #f0883e }
+  .empty-link { font-size: 12px; color: var(--primary); text-decoration: none; font-family: var(--mono) }
+  .empty-link:hover { text-decoration: underline }
+  .tooltip { position: absolute; background: rgba(23,28,34,0.92); backdrop-filter: blur(12px);
+              border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;
+              font-size: 12px; pointer-events: none; max-width: 280px; line-height: 1.6;
+              display: none; z-index: 10 }
+  .tooltip strong { color: var(--text-hi); display: block; margin-bottom: 4px;
+                    font-family: 'Space Grotesk', sans-serif }
+  .tooltip .risk-high { color: var(--red) } .tooltip .risk-medium { color: var(--amber) }
+  .tooltip .risk-low  { color: var(--green) } .tooltip .risk-none { color: var(--text-lo) }
+  .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(23,28,34,0.88);
+             backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 6px;
+             padding: 12px 16px; font-size: 12px }
+  .legend-title { color: var(--text-lo); margin-bottom: 8px; font-size: 10px; font-family: var(--mono);
+                  text-transform: uppercase; letter-spacing: .1em }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; color: var(--text) }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0 }
+  .legend-note { margin-top: 10px; color: var(--text-lo); font-size: 10px; font-family: var(--mono) }
+  #hotspots-panel { overflow-y: auto; padding: 28px }
+  .hotspots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px }
+  .card { background: var(--surface); border-radius: 8px; padding: 18px }
+  .card h3 { font-size: 10px; font-family: var(--mono); color: var(--text-lo);
+             text-transform: uppercase; letter-spacing: .1em; margin-bottom: 14px }
+  .hs-row { display: flex; align-items: center; gap: 10px; padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04) }
   .hs-row:last-child { border-bottom: none }
-  .hs-name { flex: 1; font-size: 13px; color: #c9d1d9; font-family: monospace }
-  .hs-bar-wrap { width: 100px; background: #21262d; border-radius: 3px; height: 6px; overflow: hidden }
-  .hs-bar { height: 6px; border-radius: 3px; transition: width .4s }
-  .hs-count { font-size: 12px; color: #8b949e; min-width: 24px; text-align: right }
-  .risk-badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; font-weight: 600 }
-  .risk-high-bg { background: #2d1215; color: #f85149 } .risk-medium-bg { background: #2d2407; color: #d29922 }
-  .risk-low-bg  { background: #122117; color: #3fb950 } .risk-none-bg  { background: #21262d; color: #8b949e }
+  .hs-name { flex: 1; font-size: 12px; color: var(--text); font-family: var(--mono) }
+  .hs-bar-wrap { width: 90px; background: var(--surface-hi); border-radius: 2px; height: 4px; overflow: hidden }
+  .hs-bar { height: 4px; border-radius: 2px; transition: width .4s }
+  .hs-count { font-size: 11px; color: var(--text-lo); min-width: 22px; text-align: right; font-family: var(--mono) }
+  .risk-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-family: var(--mono) }
+  .risk-high-bg { background: rgba(248,81,73,.15); color: var(--red) }
+  .risk-medium-bg { background: rgba(210,153,34,.15); color: var(--amber) }
+  .risk-low-bg  { background: rgba(63,185,80,.15); color: var(--green) }
+  .risk-none-bg  { background: var(--surface-hi); color: var(--text-lo) }
 </style>
 </head>
 <body>
-<header>
-  <h1>◆ Chronicle — ${projectName}</h1>
-  <div class="stats">
-    <div class="stat"><span id="s-mods">0</span> modules</div>
-    <div class="stat"><span id="s-dec">0</span> decisions</div>
-    <div class="stat"><span id="s-rej">0</span> rejections</div>
-    <div class="stat" style="color:#8b949e;font-size:11px">generated <span id="s-gen"></span></div>
+<div class="top-bar">
+  <div class="brand">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M10 11l-3 4M14 11l3 4"/></svg>
+    MODULE GRAPH
   </div>
-</header>
+  <span style="color:var(--text-lo);font-size:13px;font-family:var(--mono)">${projectName}</span>
+  <div class="top-stats">
+    <div><b id="s-mods">0</b> modules</div>
+    <div><b id="s-dec">0</b> decisions</div>
+    <div><b id="s-rej">0</b> rejections</div>
+    <div style="color:var(--text-lo);font-size:10px">generated <span id="s-gen"></span></div>
+  </div>
+  <a href="/" class="back-link">← Overview</a>
+</div>
 <div class="tabs">
   <button class="tab active" onclick="showTab('topology')">Topology</button>
   <button class="tab" onclick="showTab('hotspots')">Hotspots</button>
 </div>
 <div id="topology-panel" class="panel active">
+  <div id="empty-state">
+    <div class="empty-icon">◆</div>
+    <div class="empty-title">No module graph yet</div>
+    <div class="empty-body">Run <code>chronicle init</code> to analyze your git history</div>
+    <a href="/evolution-timeline" class="empty-link">Then view the evolution timeline →</a>
+  </div>
   <svg id="graph-svg"></svg>
   <div class="tooltip" id="tooltip"></div>
   <div class="legend">
     <div class="legend-title">Max Risk</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> High</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Medium</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Low</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div> None</div>
-    <div style="margin-top:8px;color:#8b949e;font-size:11px">Node size = decision count</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> High</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div> Medium</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> Low</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--text-lo)"></div> None</div>
+    <div class="legend-note">Node size = decision count</div>
   </div>
 </div>
 <div id="hotspots-panel" class="panel">
@@ -123,13 +171,20 @@ export function renderGraphHtml(data: GraphData, projectName: string): string {
 
 <script>
 const DATA = ${json};
-const RISK_COLOR = { high:'#f85149', medium:'#d29922', low:'#3fb950', none:'#8b949e' };
+const RISK_COLOR = { high:'#f85149', medium:'#d29922', low:'#3fb950', none:'#555e68' };
 
 // ── Header stats ───────────────────────────────────────────────────────────────
 document.getElementById('s-mods').textContent = DATA.stats.modules;
 document.getElementById('s-dec').textContent  = DATA.stats.decisions;
 document.getElementById('s-rej').textContent  = DATA.stats.rejections;
 document.getElementById('s-gen').textContent  = DATA.generated.slice(0,10);
+
+// Show empty state when no data
+if (DATA.nodes.length === 0) {
+  document.getElementById('empty-state').style.display = 'flex';
+  document.getElementById('graph-svg').style.display = 'none';
+  document.querySelector('.legend').style.display = 'none';
+}
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
 function showTab(name) {
@@ -213,7 +268,7 @@ function drawGraph() {
   node.append('text')
     .attr('dy', d => rScale(d.decisions) + 13)
     .attr('text-anchor', 'middle')
-    .text(d => d.id.replace(/\/$/, ''));
+    .text(d => d.id.endsWith('/') ? d.id.slice(0, -1) : d.id);
 
   sim.on('tick', () => {
     link
@@ -245,7 +300,7 @@ function drawHotspots() {
     return '<div class="card"><h3>' + title + '</h3>' +
       rows.map(r =>
         '<div class="hs-row">' +
-        '<span class="hs-name">' + r.id.replace(/\/$/, '') + '</span>' +
+        '<span class="hs-name">' + (r.id.endsWith('/') ? r.id.slice(0, -1) : r.id) + '</span>' +
         (extra ? extra(r) : '') +
         '<div class="hs-bar-wrap"><div class="hs-bar" style="width:' +
           Math.round(barValue(r) / barMax * 100) + '%;background:' + RISK_COLOR[r.maxRisk] + '"></div></div>' +

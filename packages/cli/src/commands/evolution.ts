@@ -155,7 +155,7 @@ export function renderEvolutionTimelineHtml(eras: Era[], projectName: string): s
             <div class="file-chips">${fileItems}</div>
           </div>` : ''}
       </div>
-      <div class="era-connector">${i < eras.length - 1 ? '↓' : '⬛'}</div>
+      ${i < eras.length - 1 ? '<div class="era-connector">↓</div>' : ''}
     </div>`
   }).join('\n')
 
@@ -171,95 +171,123 @@ export function renderEvolutionTimelineHtml(eras: Era[], projectName: string): s
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escHtml(projectName)} — Evolution Timeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg: #0f1419; --surface: #171c22; --surface-hi: #1b2026; --surface-top: #252a30;
+    --border: rgba(255,255,255,0.06); --primary: #81da8c; --primary-dim: #2f8743;
+    --text: #bfcabb; --text-hi: #e8ece7; --text-lo: #6b7280; --mono: ui-monospace, 'Cascadia Code', monospace;
+    --red: #f85149; --amber: #d29922; --green: #3fb950;
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
-  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         background: #0d1117; color: #c9d1d9; min-height: 100vh }
-  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 32px;
-            display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 20 }
-  .header h1 { font-size: 17px; color: #e6edf3 }
-  .header a { color: #58a6ff; font-size: 13px; text-decoration: none }
-  .header a:hover { text-decoration: underline }
+  body { font: 14px/1.5 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh }
+  .top-bar { background: var(--surface); padding: 0 32px; height: 52px; display: flex;
+              align-items: center; gap: 16px; position: sticky; top: 0; z-index: 20;
+              border-bottom: 1px solid var(--border) }
+  .brand { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 700;
+           color: var(--primary); letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px }
   .stat-pills { display: flex; gap: 8px; margin-left: auto }
-  .pill { background: #21262d; border: 1px solid #30363d; border-radius: 20px;
-          padding: 3px 10px; font-size: 12px; color: #8b949e }
-  .pill span { color: #e6edf3; font-weight: 600 }
+  .pill { background: var(--surface-hi); border-radius: 20px; padding: 3px 12px;
+          font-size: 11px; color: var(--text-lo); font-family: var(--mono) }
+  .pill b { color: var(--text-hi); font-weight: 600 }
+  .back-link { font-size: 12px; color: var(--text-lo); text-decoration: none; font-family: var(--mono);
+               padding: 4px 10px; border-radius: 4px; background: var(--surface-hi); margin-left: 12px;
+               transition: color .15s, background .15s }
+  .back-link:hover { color: var(--primary); background: var(--surface-top) }
   .layout { display: flex; gap: 0 }
-  .chart-panel { width: 200px; min-width: 200px; background: #161b22; border-right: 1px solid #30363d;
-                 padding: 24px 16px; position: sticky; top: 57px; height: calc(100vh - 57px);
-                 overflow-y: auto; flex-shrink: 0 }
-  .chart-panel h3 { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px }
-  .chart-bars { display: flex; align-items: flex-end; gap: 4px; height: 100px; padding: 0 4px }
-  .chart-bar { flex: 1; background: #d2a8ff; border-radius: 2px 2px 0 0; min-height: 4px;
-               transition: background .15s; cursor: pointer }
-  .chart-bar:hover { background: #e0b3ff }
-  .chart-axis { border-top: 1px solid #30363d; margin-top: 4px; padding-top: 6px;
-                font-size: 10px; color: #8b949e; display: flex; justify-content: space-between }
-  .legend { margin-top: 20px }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; margin-bottom: 6px }
-  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0 }
-  .timeline { flex: 1; padding: 32px; max-width: 900px }
-  .timeline-heading { font-size: 22px; font-weight: 700; color: #e6edf3; margin-bottom: 8px }
-  .timeline-sub { color: #8b949e; font-size: 13px; margin-bottom: 32px }
-  .era-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
-              margin-bottom: 16px; overflow: hidden; transition: border-color .15s }
-  .era-card:hover { border-color: #d2a8ff44 }
-  .era-header { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px 10px }
-  .era-num { font-size: 28px; font-weight: 700; color: #30363d; font-variant-numeric: tabular-nums; width: 44px; flex-shrink: 0 }
+  .chart-panel { width: 192px; min-width: 192px; background: var(--surface); padding: 24px 16px;
+                 position: sticky; top: 52px; height: calc(100vh - 52px); overflow-y: auto; flex-shrink: 0 }
+  .chart-panel h3 { font-size: 10px; font-family: var(--mono); color: var(--text-lo);
+                    text-transform: uppercase; letter-spacing: .1em; margin-bottom: 16px }
+  .chart-bars { display: flex; align-items: flex-end; gap: 3px; height: 90px; padding: 0 2px }
+  .chart-bar { flex: 1; background: var(--primary); border-radius: 2px 2px 0 0; min-height: 6px;
+               opacity: .7; transition: opacity .15s; cursor: pointer }
+  .chart-bar:hover { opacity: 1 }
+  .chart-axis { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px;
+                font-size: 10px; color: var(--text-lo); display: flex; justify-content: space-between;
+                font-family: var(--mono) }
+  .risk-legend { margin-top: 24px }
+  .risk-label { font-size: 10px; font-family: var(--mono); color: var(--text-lo);
+                text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px }
+  .legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px;
+                 color: var(--text); margin-bottom: 7px }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0 }
+  .timeline { flex: 1; padding: 32px 36px; max-width: 880px }
+  .timeline-heading { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700;
+                      color: var(--text-hi); margin-bottom: 6px; letter-spacing: -0.02em }
+  .timeline-sub { color: var(--text-lo); font-size: 13px; margin-bottom: 32px; font-family: var(--mono) }
+  .era-card { background: var(--surface); border-radius: 8px; margin-bottom: 12px;
+              overflow: hidden; transition: background .15s }
+  .era-card:hover { background: var(--surface-hi) }
+  .era-header { display: flex; align-items: flex-start; gap: 14px; padding: 14px 18px 10px }
+  .era-num { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700;
+             color: var(--border); font-variant-numeric: tabular-nums; width: 44px; flex-shrink: 0;
+             color: rgba(255,255,255,0.1) }
   .era-meta { flex: 1 }
-  .era-tag { display: inline-block; background: #d2a8ff22; color: #d2a8ff; border: 1px solid #d2a8ff44;
-             border-radius: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; margin-bottom: 4px }
-  .era-tag.synthetic { background: #3fb95022; color: #3fb950; border-color: #3fb95044 }
-  .era-range { display: block; font-size: 14px; color: #e6edf3; font-weight: 600 }
-  .era-dates { display: block; font-size: 11px; color: #8b949e; margin-top: 2px }
-  .cap-bar { height: 3px; background: #21262d }
-  .cap-fill { height: 100%; background: linear-gradient(90deg, #d2a8ff, #79c0ff); transition: width .3s }
-  .era-body { padding: 12px 16px 16px; display: flex; flex-wrap: wrap; gap: 16px }
+  .era-tag { display: inline-block; background: rgba(129,218,140,0.12); color: var(--primary);
+             border-radius: 3px; font-size: 10px; font-weight: 600; padding: 1px 6px; margin-bottom: 5px;
+             font-family: var(--mono); letter-spacing: .03em }
+  .era-tag.synthetic { background: rgba(63,185,80,0.1); color: var(--green) }
+  .era-range { display: block; font-size: 14px; color: var(--text-hi); font-weight: 600;
+               font-family: 'Space Grotesk', sans-serif }
+  .era-dates { display: block; font-size: 11px; color: var(--text-lo); margin-top: 3px;
+               font-family: var(--mono) }
+  .cap-bar { height: 2px; background: var(--surface-hi) }
+  .cap-fill { height: 100%; background: linear-gradient(90deg, var(--primary), #79c0ff); transition: width .3s }
+  .era-body { padding: 12px 18px 18px; display: flex; flex-wrap: wrap; gap: 16px }
   .era-section { flex: 1; min-width: 200px }
-  .section-title { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: .06em;
-                   margin-bottom: 6px; display: flex; align-items: center; gap: 6px }
-  .count { background: #21262d; border-radius: 10px; padding: 0 6px; font-size: 11px; color: #c9d1d9 }
+  .section-title { font-size: 10px; font-family: var(--mono); color: var(--text-lo);
+                   text-transform: uppercase; letter-spacing: .1em;
+                   margin-bottom: 8px; display: flex; align-items: center; gap: 6px }
+  .count { background: var(--surface-top); border-radius: 8px; padding: 0 6px;
+           font-size: 10px; color: var(--text) }
   .dec-list, .rej-list { list-style: none }
-  .dec-item { padding: 4px 8px; font-size: 12px; color: #c9d1d9; border-radius: 4px;
-              margin-bottom: 3px; background: #0d111722 }
-  .rej-item { padding: 3px 0; font-size: 12px; color: #8b949e }
-  .more-item { font-size: 11px; color: #8b949e; padding: 3px 8px }
-  .adr-badge { background: #1f6feb33; color: #58a6ff; border-radius: 3px; font-size: 10px;
-               padding: 0 4px; border: 1px solid #1f6feb55 }
+  .dec-item { padding: 4px 8px; font-size: 12px; color: var(--text); border-radius: 4px;
+              margin-bottom: 3px; border-left: 2px solid transparent }
+  .rej-item { padding: 3px 0; font-size: 12px; color: var(--text-lo) }
+  .more-item { font-size: 11px; color: var(--text-lo); padding: 3px 8px; font-family: var(--mono) }
+  .adr-badge { background: rgba(88,166,255,0.1); color: #58a6ff; border-radius: 3px; font-size: 10px;
+               padding: 0 4px; font-family: var(--mono) }
   .file-chips { display: flex; flex-wrap: wrap; gap: 4px }
-  .file-chips code { background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
-                     padding: 2px 6px; font-size: 11px; color: #8b949e; font-family: 'SF Mono', Consolas, monospace }
-  .era-connector { text-align: center; color: #30363d; padding: 4px 0; font-size: 18px }
+  .file-chips code { background: var(--bg); border-radius: 3px; padding: 2px 6px; font-size: 10px;
+                     color: var(--text-lo); font-family: var(--mono) }
+  .era-connector { text-align: center; color: rgba(129,218,140,0.25); padding: 2px 0; font-size: 16px }
 </style>
 </head><body>
-<div class="header">
-  <div style="color:#d2a8ff;font-size:18px">◈</div>
-  <h1>${escHtml(projectName)} — Evolution Timeline</h1>
-  <div class="stat-pills">
-    <div class="pill"><span>${eras.length}</span> eras</div>
-    <div class="pill"><span>${totalDecisions}</span> decisions</div>
-    <div class="pill"><span>${totalRejections}</span> rejected</div>
+<div class="top-bar">
+  <div class="brand">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h14M3 18h10"/></svg>
+    EVOLUTION TIMELINE
   </div>
-  <a href="/" style="margin-left:16px">← Overview</a>
+  <span style="color:var(--text-lo);font-size:13px;font-family:var(--mono)">${escHtml(projectName)}</span>
+  <div class="stat-pills">
+    <div class="pill"><b>${eras.length}</b> eras</div>
+    <div class="pill"><b>${totalDecisions}</b> decisions</div>
+    <div class="pill"><b>${totalRejections}</b> rejected</div>
+  </div>
+  <a href="/" class="back-link">← Overview</a>
 </div>
 <div class="layout">
   <div class="chart-panel">
     <h3>Decision velocity</h3>
     <div class="chart-bars">${chartBars}</div>
     <div class="chart-axis"><span>v1</span><span>now</span></div>
-    <div class="legend" style="margin-top:20px">
-      <div style="font-size:11px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Risk levels</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> High risk</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Medium risk</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Low risk</div>
+    <div class="risk-legend">
+      <div class="risk-label">Risk levels</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div> High</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Medium</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div> Low</div>
     </div>
   </div>
   <div class="timeline">
     <div class="timeline-heading">${escHtml(projectName)}</div>
     <div class="timeline-sub">
-      ${eras.length} development phases &nbsp;·&nbsp;
-      ${totalDecisions} architectural decisions &nbsp;·&nbsp;
-      ${totalRejections} rejected approaches
+      ${eras.length} development phase${eras.length !== 1 ? 's' : ''}
+      ${totalDecisions > 0 ? ` · ${totalDecisions} decisions` : ''}
+      ${totalRejections > 0 ? ` · ${totalRejections} rejected` : ''}
+      ${totalDecisions === 0 ? ' · <span style="color:var(--text-lo)">run <code style="background:var(--surface);padding:2px 5px;border-radius:3px;color:#f0883e">chronicle init</code> to populate</span>' : ''}
     </div>
     ${cards}
   </div>
