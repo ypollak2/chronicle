@@ -1,4 +1,4 @@
-import { findLoreRoot, readStore, lorePath, rankDecisions, buildSemanticScores, trimToTokenBudget, buildFileModMap, annotateStaleDecisions, formatStaleWarning } from '@chronicle/core'
+import { findLoreRoot, readStore, lorePath, rankDecisions, buildSemanticScores, trimToTokenBudget, buildFileModMap, annotateStaleDecisions, formatStaleWarning, readContext, formatContextForInject, buildOwnershipSection } from '@chronicle/core'
 import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
@@ -11,6 +11,18 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
   }
 
   const sections: string[] = []
+
+  // Project context (I2) — prepended first for maximum AI visibility
+  const ctx = readContext(root)
+  const ctxFormatted = formatContextForInject(ctx)
+  if (ctxFormatted) sections.push(ctxFormatted)
+
+  // Ownership section (I3) — include when --files is scoped
+  if (opts.files) {
+    const fileList = opts.files.split(',').map(f => f.trim()).filter(Boolean)
+    const ownershipSection = buildOwnershipSection(root, fileList)
+    if (ownershipSection) sections.push(ownershipSection)
+  }
 
   // Always include the index
   const index = readStore(root, 'index')

@@ -94,9 +94,16 @@ export async function cmdCapture(opts: { fromCommit: string; llm?: string }) {
     for (const d of results.filter(d => d.isDecision && d.isDeep)) {
       writeDeepDecision(root, slugify(d.title), formatDeepADR(d))
     }
+    // Stamp the commit author email for ownership tracking (I3)
+    let authorEmail = ''
+    try {
+      authorEmail = execSync('git log -1 --format=%ae HEAD', { cwd: root }).toString().trim()
+    } catch { /* non-fatal */ }
+
     // Append to decisions index
     for (const d of results.filter(r => r.isDecision)) {
-      const row = `| ${d.title.slice(0, 50)} | ${d.affects.join(', ').slice(0, 40)} | ${d.risk} |${d.isDeep ? ` [→](decisions/${slugify(d.title)}.md)` : ''} |`
+      const authorComment = authorEmail ? ` <!-- author:${authorEmail} -->` : ''
+      const row = `| ${d.title.slice(0, 50)} | ${d.affects.join(', ').slice(0, 40)} | ${d.risk} |${d.isDeep ? ` [→](decisions/${slugify(d.title)}.md)` : ''} |${authorComment}`
       appendToStore(root, 'decisions', row)
     }
 

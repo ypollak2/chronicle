@@ -39,7 +39,7 @@ describe('buildEvolution', () => {
   beforeEach(() => { root = makeTaggedRepo() })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  it('returns empty array for repo with no tags', () => {
+  it('synthesizes a single era for repo with no tags', () => {
     const dir = join(os.tmpdir(), `no-tags-${Date.now()}`)
     mkdirSync(dir)
     execSync('git init', { cwd: dir })
@@ -47,7 +47,10 @@ describe('buildEvolution', () => {
     writeFileSync(join(dir, 'x.ts'), 'x')
     execSync('git add . && git commit -m "init"', { cwd: dir })
     initStore(dir)
-    expect(buildEvolution(dir)).toEqual([])
+    // No tags → synthesizes a single 'v0.1 (initial)' era from commit history
+    const eras = buildEvolution(dir)
+    expect(eras.length).toBe(1)
+    expect(eras[0].tag).toBe('v0.1 (initial)')
     rmSync(dir, { recursive: true, force: true })
   })
 

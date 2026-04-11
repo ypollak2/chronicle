@@ -6,6 +6,39 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.9.0] — 2026-04-11
+
+### Added
+
+**Decision relationship DAG (`chronicle relate`) (I1)**
+- `chronicle relate "<title>" --depends-on "<title>"` — record that a decision builds on another
+- `chronicle relate "<title>" --supersedes "<title>"` — mark an old decision as replaced
+- `chronicle relate "<title>" --related-to "<title>"` — soft cross-reference between decisions
+- `chronicle relate --list` — print the full relation graph across all decisions
+- Relations stored as `<!-- relations:{...} -->` inline HTML comments in `decisions.md` rows (backward-compatible with existing stores)
+- `applyRelationToContent`, `buildRelationGraph`, `getRelatedRows`, `parseRelations`, `serializeRelations`, `addRelationToRow`, `removeRelationFromRow`, `extractTitleFromRow` exported from `@chronicle/core`
+
+**Business/product context layer (`chronicle context`) (I2)**
+- `chronicle context add --goal|--constraint|--team|--stack|--non-goal <text>` — add a fact to `.lore/context.md`
+- `chronicle context remove ...` — remove a context fact
+- `chronicle context show` — print current project context
+- `chronicle context edit` — open `context.md` in `$EDITOR`
+- `chronicle inject` now prepends the project context block at the top of every output
+- `readContext`, `writeContext`, `addContextFact`, `removeContextFact`, `formatContextForInject` exported from `@chronicle/core`
+
+**Ownership tracking (`chronicle who`) (I3)**
+- `chronicle who <file>` — show owner(s) and all recorded decisions + risks for a file
+- Reads CODEOWNERS automatically (checks `CODEOWNERS`, `.github/CODEOWNERS`, `.gitlab/CODEOWNERS`)
+- Falls back to `.lore/ownership.md` (format: `- \`pattern\`: @owner`)
+- `chronicle capture` now stamps `<!-- author:email -->` on each captured decision row
+- `chronicle inject --files` now includes a `## File Ownership` section when ownership is defined
+- `loadOwnership`, `getOwnersForFile`, `parseAuthorFromRow`, `setAuthorOnRow`, `buildOwnershipSection`, `writeLoreOwnership` exported from `@chronicle/core`
+
+### Fixed
+- Evolution test updated: `buildEvolution` correctly synthesizes a single `v0.1 (initial)` era for repos with no git tags (time-based era synthesis was added in v0.3.0 but the test expectation was not updated)
+
+---
+
 ## [0.8.0] — 2026-04-11
 
 ### Added

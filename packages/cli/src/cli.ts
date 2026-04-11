@@ -16,6 +16,9 @@ import { cmdEval } from './commands/eval.js'
 import { cmdAdd } from './commands/add.js'
 import { cmdIngest } from './commands/ingest.js'
 import { cmdMergeDriver } from './commands/merge-driver.js'
+import { cmdRelate } from './commands/relate.js'
+import { cmdContext } from './commands/context.js'
+import { cmdWho } from './commands/who.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -24,7 +27,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.8.0')
+  .version('0.9.0')
 
 program
   .command('init')
@@ -137,6 +140,38 @@ program
   .option('--json', 'output results as JSON')
   .option('--verbose', 'show per-case details')
   .action(cmdEval)
+
+program
+  .command('relate <title>')
+  .description('Add a relationship between decisions (depends-on, supersedes, related-to)')
+  .option('--depends-on <title>', 'this decision depends on another')
+  .option('--supersedes <title>', 'this decision supersedes an older one')
+  .option('--related-to <title>', 'this decision is related to another')
+  .option('--list', 'show all decision relationships')
+  .action((title, opts) => cmdRelate({ title, ...opts }))
+
+const context = program.command('context').description('Manage project context (.lore/context.md)')
+context.command('add').description('Add a context fact')
+  .option('--goal <text>', 'a project goal')
+  .option('--constraint <text>', 'a technical or business constraint')
+  .option('--team <text>', 'a team member or team description')
+  .option('--stack <text>', 'a technology in the stack')
+  .option('--non-goal <text>', 'something explicitly out of scope')
+  .action((opts) => cmdContext({ action: 'add', ...opts }))
+context.command('remove').description('Remove a context fact')
+  .option('--goal <text>')
+  .option('--constraint <text>')
+  .option('--team <text>')
+  .option('--stack <text>')
+  .option('--non-goal <text>')
+  .action((opts) => cmdContext({ action: 'remove', ...opts }))
+context.command('show').description('Print current project context').action(() => cmdContext({ action: 'show' }))
+context.command('edit').description('Open context.md in $EDITOR').action(() => cmdContext({ action: 'edit' }))
+
+program
+  .command('who <file>')
+  .description('Show owner and decisions for a file')
+  .action(cmdWho)
 
 program
   .command('mcp')
