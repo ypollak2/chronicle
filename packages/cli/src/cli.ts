@@ -13,6 +13,9 @@ import { cmdServe } from './commands/serve.js'
 import { cmdSession } from './commands/session.js'
 import { cmdMcp } from './commands/mcp.js'
 import { cmdEval } from './commands/eval.js'
+import { cmdAdd } from './commands/add.js'
+import { cmdIngest } from './commands/ingest.js'
+import { cmdMergeDriver } from './commands/merge-driver.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -21,7 +24,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.7.0')
+  .version('0.8.0')
 
 program
   .command('init')
@@ -109,6 +112,25 @@ session.command('list').description('List saved session notes').action(() => cmd
 session.command('show [n]').description('Show last N session notes (default: 1)').action((n) => cmdSession({ action: 'show', n }))
 
 program
+  .command('add')
+  .description('Register a knowledge source (repo, directory, URL, or PDF)')
+  .option('--repo <path>', 'git repository path or remote URL')
+  .option('--dir <path>', 'local directory to index')
+  .option('--url <url>', 'web page to index')
+  .option('--pdf <path>', 'PDF file to index')
+  .option('--label <name>', 'human-readable name for this source')
+  .option('--list', 'list all registered sources')
+  .option('--remove <id>', 'unregister a source by ID')
+  .action(cmdAdd)
+
+program
+  .command('ingest')
+  .description('Index registered non-git sources (dirs, URLs, PDFs)')
+  .option('--id <id>', 'ingest only this source')
+  .option('--force', 're-ingest even if already indexed')
+  .action(cmdIngest)
+
+program
   .command('eval')
   .description('Run RAG quality harness — measures recall, MRR, and confidence accuracy')
   .option('--init', 'bootstrap .lore/.eval.json test suite from existing decisions')
@@ -125,7 +147,13 @@ const hooks = program.command('hooks').description('Manage git hooks')
 hooks.command('install').description('Install post-commit and prepare-commit-msg hooks').action(cmdHooksInstall)
 hooks.command('remove').description('Remove Chronicle hooks from git').action(cmdHooksRemove)
 
-// Internal commands (called by hooks, not for direct use)
+// Internal commands (called by hooks/git, not for direct use)
+program
+  .command('merge-driver <base> <ours> <theirs>', { hidden: true })
+  .option('--path <p>')
+  .action((base, ours, theirs, opts) => cmdMergeDriver({ base, ours, theirs, path: opts.path }))
+
+
 program
   .command('capture', { hidden: true })
   .option('--from-commit <hash>')

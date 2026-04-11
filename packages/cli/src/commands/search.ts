@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { findLoreRoot, lorePath, semanticSearch } from '@chronicle/core'
 
+
 export async function cmdSearch(
   query: string,
   opts: { limit?: string; json?: boolean; semantic?: boolean; hybrid?: boolean; reindex?: boolean }
@@ -65,7 +66,12 @@ export async function cmdSearch(
   const pattern = new RegExp(query, 'gi')
   const results: SearchResult[] = []
 
-  for (const file of walkMarkdown(loreDir)) {
+  // M4: also search chunk files from ingested sources
+  const chunksDir = join(loreDir, 'chunks')
+  const searchDirs = [loreDir]
+  if (existsSync(chunksDir)) searchDirs.push(chunksDir)
+
+  for (const file of searchDirs.flatMap(walkMarkdown)) {
     const content = readFileSync(file, 'utf8')
     const lines = content.split('\n')
     for (let i = 0; i < lines.length; i++) {

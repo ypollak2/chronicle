@@ -38,6 +38,12 @@ export async function cmdHooksInstall({ silent = false } = {}) {
   installHook(hooksDir, 'post-commit', POST_COMMIT_HOOK)
   installHook(hooksDir, 'prepare-commit-msg', PREPARE_COMMIT_MSG_HOOK)
 
+  // M5: register git merge driver for decisions.md conflict-free merges
+  try {
+    const { installMergeDriver } = await import('./merge-driver.js')
+    await installMergeDriver(root)
+  } catch { /* non-fatal */ }
+
   if (!silent) {
     console.log(chalk.green('✓  Chronicle hooks installed'))
     console.log(chalk.dim('   post-commit          → captures decisions after each commit (async)'))

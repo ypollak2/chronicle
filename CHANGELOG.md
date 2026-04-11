@@ -6,6 +6,44 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.0] — 2026-04-11
+
+### Added
+
+**Multi-source knowledge ingestion**
+
+`chronicle add` — register additional knowledge sources:
+- `--repo <path|url>` — secondary git repo (clones remotes to `~/.chronicle/repos/`); decisions extracted immediately
+- `--dir <path>` — local directory (`.md`, `.ts`, `.py`, `.go`, etc.)
+- `--url <url>` — web page (HTML stripped to text)
+- `--pdf <path>` — PDF file (text PDFs; requires optional `pdf-parse`)
+- `--list` / `--remove <id>` — manage registered sources
+- Source registry persisted at `.lore/sources.json`
+
+`chronicle ingest` — index dir/url/pdf sources into `.lore/chunks/{sourceId}/`:
+- Chunks text at ~500-token boundaries (paragraph-aware)
+- Skips already-ingested sources unless `--force`
+- `--id <id>` to re-ingest a single source
+
+**Unified search (M4)**
+- `chronicle search` now also scans `.lore/chunks/` in keyword mode
+- Semantic/hybrid modes already work across all embedded content
+
+**Git merge driver for decisions.md (M5)**
+- `chronicle hooks install` now registers `merge.chronicle-decisions` in `.git/config`
+- Adds `.lore/decisions*.md merge=chronicle-decisions` to `.gitattributes`
+- `chronicle merge-driver <base> <ours> <theirs>` (internal, called by git):
+  - Union-merges table rows from both branches
+  - Deduplicates by title (keeps newest date)
+  - Exits 0 → conflict-free merge; exits 1 → unresolvable
+
+**Source abstraction layer (`@chronicle/core`)**
+- `SourceConfig`, `SourceType`, `SourceRegistry` types
+- `loadSourceRegistry`, `saveSourceRegistry`, `addSource`, `removeSource`, `listSources`, `getSource`, `markIngested`, `deriveSourceId`
+- `chunkText`, `ingestDir`, `ingestUrl`, `ingestPdf` from `ingestor.ts`
+
+---
+
 ## [0.7.0] — 2026-04-11
 
 ### Added
