@@ -2,9 +2,10 @@ import chalk from 'chalk'
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join, extname } from 'path'
-import { findLoreRoot, lorePath, readStore } from '@chronicle/core'
+import { findLoreRoot, lorePath, readStore, buildEvolution } from '@chronicle/core'
 import { buildGraphData } from '../graph.js'
 import { renderGraphHtml } from './graph.js'
+import { renderEvolutionTimelineHtml } from './evolution.js'
 
 export async function cmdServe(opts: { port?: string }) {
   const root = findLoreRoot()
@@ -61,6 +62,21 @@ export async function cmdServe(opts: { port?: string }) {
       return
     }
 
+    if (url === '/api/evolution') {
+      const eras = buildEvolution(root)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(eras))
+      return
+    }
+
+    if (url === '/evolution-timeline') {
+      const projectName = root.split('/').pop() ?? 'project'
+      const eras = buildEvolution(root)
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(renderEvolutionTimelineHtml(eras, projectName))
+      return
+    }
+
     res.writeHead(404); res.end('Not found')
   })
 
@@ -106,6 +122,7 @@ function renderIndex(root: string, loreDir: string): string {
         <a href="/file/rejected.md">Rejected Ideas</a>
         <a href="/file/evolution.md">System Evolution</a>
         <a href="/graph" style="color:#3fb950">◆ Graph View</a>
+        <a href="/evolution-timeline" style="color:#d2a8ff">◈ Evolution Timeline</a>
         ${adrs.length ? `<hr><small>Deep ADRs (${adrs.length})</small>` : ''}
         ${adrs.map(a => `<a href="/file/${encodeURIComponent(a.file)}">${a.name}</a>`).join('\n')}
       </nav>

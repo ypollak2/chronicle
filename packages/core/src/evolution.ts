@@ -22,14 +22,19 @@ export interface EraDecision {
 
 // Build the full evolution record from git tags + .lore/ store
 export function buildEvolution(root: string): Era[] {
-  const tags = getTagsChronological(root)
-  if (tags.length === 0) return []
+  let tags = getTagsChronological(root)
 
-  // Add a synthetic "current" era if HEAD has commits beyond the last tag
-  const latestTag = tags[tags.length - 1]
-  if (isHeadAheadOfTag(root, latestTag.name)) {
-    const headDate = getHeadDate(root) ?? new Date().toISOString()
-    tags.push({ name: 'HEAD (current)', date: headDate, hash: 'HEAD' })
+  if (tags.length === 0) {
+    // No git tags — synthesize quarterly eras from commit history
+    tags = buildTimeBasedEras(root)
+    if (tags.length === 0) return []
+  } else {
+    // Add a synthetic "current" era if HEAD has commits beyond the last tag
+    const latestTag = tags[tags.length - 1]
+    if (isHeadAheadOfTag(root, latestTag.name)) {
+      const headDate = getHeadDate(root) ?? new Date().toISOString()
+      tags.push({ name: 'HEAD (current)', date: headDate, hash: 'HEAD' })
+    }
   }
 
   const eras: Era[] = []
@@ -131,6 +136,43 @@ export function mergeWithExisting(newMd: string, existingMd: string): string {
 // ── git helpers ───────────────────────────────────────────────────────────────
 
 interface TagEntry { name: string; date: string; hash: string }
+
+/**
+ * When no git tags exist, synthesize eras from commit density.
+ * Splits history into up to 4 time buckets (quarters) so evolution.md
+ * always has meaningful structure even in untagged repos.
+ */
+function buildTimeBasedEras(root: string): TagEntry[] {
+  try {
+    const raw = execSync(
+      `git -C "${root}" log --reverse --format="%H|%ai"`,
+      { maxBuffer: 4 * 1024 * 1024 }
+    ).toString().trim()
+    if (!raw) return []
+
+    const commits = raw.split('\n').filter(Boolean).map(line => {
+      const [hash, ...rest] = line.split('|')
+      return { hash, date: rest.join('|').trim() }
+    })
+
+    if (commits.length === 0) return []
+    if (commits.length === 1) {
+      return [{ name: 'v0.1 (initial)', date: commits[0].date, hash: commits[0].hash }]
+    }
+
+    // Determine bucket count: 1 bucket per ~50 commits, max 4
+    const bucketCount = Math.min(4, Math.max(1, Math.floor(commits.length / 50)))
+    const bucketSize = Math.floor(commits.length / bucketCount)
+
+    return Array.from({ length: bucketCount }, (_, i) => {
+      const isLast = i === bucketCount - 1
+      const idx = isLast ? commits.length - 1 : (i + 1) * bucketSize - 1
+      const commit = commits[idx]
+      const label = `phase-${i + 1}`
+      return { name: label, date: commit.date, hash: commit.hash }
+    })
+  } catch { return [] }
+}
 
 function getTagsChronological(root: string): TagEntry[] {
   try {
