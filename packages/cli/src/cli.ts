@@ -37,6 +37,7 @@ program
   .option('--files <files>', 'comma-separated files to scope context to')
   .option('--full', 'include all deep ADR files, not just index')
   .option('--format <format>', 'output format: markdown|xml|plain', 'markdown')
+  .option('--min-confidence <n>', 'omit decisions below this confidence threshold (0.0–1.0)')
   .action(cmdInject)
 
 program

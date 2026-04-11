@@ -2,11 +2,13 @@ import type { CommitMeta } from './scanner.js'
 
 export interface ExtractionResult {
   hash?: string             // commit SHA from LLM response — used for cache keying
+  date?: string             // YYYY-MM-DD from CommitMeta (populated after extraction)
   isDecision: boolean       // true = worth logging
   isRejection: boolean      // true = something was tried and reverted
   title: string
   affects: string[]         // file paths or module names
   risk: 'low' | 'medium' | 'high'
+  confidence: number        // 0.0–1.0 how certain the LLM is this is architectural
   rationale: string         // the "why"
   rejected?: string         // what was abandoned and why
   isDeep: boolean           // true = needs its own ADR file
@@ -36,6 +38,7 @@ For each commit, extract:
 - Risk level: high (many dependents, hard to reverse), medium, low
 - Was anything rejected/reverted? If so, why?
 - Is this decision complex enough to warrant a full ADR document? (true if: affects 3+ modules, hard to reverse, has rejected alternatives)
+- Confidence: how certain are you this is a genuine architectural decision? (0.0 = uncertain, likely a refactor or bump; 1.0 = clearly architectural with explicit rationale)
 
 Return a JSON array, one object per commit:
 [
@@ -46,6 +49,7 @@ Return a JSON array, one object per commit:
     "title": "Move task queue from in-process to Redis",
     "affects": ["workers/", "config/queue.ts"],
     "risk": "high",
+    "confidence": 0.95,
     "rationale": "In-process queue lost jobs on crash. Redis provides durability and horizontal scaling.",
     "rejected": null,
     "isDeep": true
@@ -78,6 +82,17 @@ export async function extractFromCommits(
     case 'clustered': results = await strategyClustered(uncached, llm, concurrency); break
     case 'two-pass':  throw new Error('two-pass strategy not yet implemented (v3 roadmap)')
   }
+
+  // Enrich results: populate date from CommitMeta and default missing confidence
+  const commitsByHash = new Map(commits.map(c => [c.hash, c]))
+  results.forEach((r, i) => {
+    const commit = (r.hash ? commitsByHash.get(r.hash) : null) ?? uncached[i]
+    if (commit) {
+      r.date = commit.date.slice(0, 10)
+      r.hash ??= commit.hash
+    }
+    r.confidence ??= 1.0   // old cache entries without confidence default to 1.0
+  })
 
   // Cache by hash from result (LLM returns hash in each object); fall back to positional
   if (cache) {

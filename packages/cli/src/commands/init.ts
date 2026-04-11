@@ -117,10 +117,13 @@ function buildStore(root: string, results: ExtractionResult[]) {
   const tableRows = decisions.map(d => {
     const title = d.title ?? 'Unnamed decision'
     const affects = (d.affects ?? []).join(', ')
-    return `| ${title.slice(0, 50)} | ${affects.slice(0, 40)} | ${d.risk ?? 'low'} |${d.isDeep ? ` [→](decisions/${slugify(title)}.md)` : ''} |`
+    const date = d.date ?? ''
+    const conf = typeof d.confidence === 'number' ? d.confidence : 1.0
+    const confTag = conf < 1.0 ? ` <!-- confidence:${conf.toFixed(2)} -->` : ''
+    return `| ${date} | ${title.slice(0, 50)} | ${affects.slice(0, 40)} | ${d.risk ?? 'low'} |${d.isDeep ? ` [→](decisions/${slugify(title)}.md)` : ''} |${confTag}`
   }).join('\n')
 
-  writeStore(root, 'decisions', `# Decision Log\n\n| Decision | Affects | Risk | ADR |\n|----------|---------|------|-----|\n${tableRows}\n`)
+  writeStore(root, 'decisions', `# Decision Log\n\n| Date | Decision | Affects | Risk | ADR |\n|------|----------|---------|------|-----|\n${tableRows}\n`)
 
   // rejected.md — append each rejection
   for (const r of rejections) {

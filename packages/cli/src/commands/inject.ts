@@ -3,7 +3,7 @@ import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
 
-export async function cmdInject(opts: { files?: string; full?: boolean; format: string }) {
+export async function cmdInject(opts: { files?: string; full?: boolean; format: string; minConfidence?: string }) {
   const root = findLoreRoot()
   if (!root) {
     process.stderr.write(chalk.red('✗  No .lore/ found. Run `chronicle init` first.\n'))
@@ -16,9 +16,13 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
   const index = readStore(root, 'index')
   if (index) sections.push(index)
 
-  // Decisions index (lightweight — just the table)
+  // Decisions index (lightweight — just the table), filtered by min-confidence
   const decisions = readStore(root, 'decisions')
-  if (decisions) sections.push(decisions)
+  if (decisions) {
+    const minConf = opts.minConfidence ? parseFloat(opts.minConfidence) : 0.0
+    const filtered = minConf > 0 ? filterByConfidence(decisions, minConf) : decisions
+    if (filtered) sections.push(filtered)
+  }
 
   // Rejected — always included (high signal, compact)
   const rejected = readStore(root, 'rejected')
@@ -64,6 +68,17 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
 
   const output = formatOutput(sections.join('\n\n---\n\n'), opts.format)
   process.stdout.write(output)
+}
+
+function filterByConfidence(content: string, minConf: number): string {
+  return content
+    .split('\n')
+    .filter(line => {
+      const match = line.match(/<!-- confidence:([\d.]+) -->/)
+      if (!match) return true                          // no tag = keep (header rows, high-confidence)
+      return parseFloat(match[1]) >= minConf
+    })
+    .join('\n')
 }
 
 function filterByFiles(content: string, files: string[]): string {
