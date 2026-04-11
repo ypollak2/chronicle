@@ -1,4 +1,6 @@
 import { readStore } from '@chronicle/core'
+import { existsSync } from 'fs'
+import { join } from 'path'
 
 export interface GraphNode {
   id: string
@@ -19,24 +21,58 @@ export interface GraphData {
   nodes: GraphNode[]
   links: GraphLink[]
   generated: string
+  isMonorepo: boolean
   stats: { decisions: number; rejections: number; modules: number }
+}
+
+export interface GraphOptions {
+  depth?: number        // path segments to use for grouping (default: auto)
+  monorepo?: boolean    // override monorepo auto-detection
 }
 
 const RISK_ORDER = { none: 0, low: 1, medium: 2, high: 3 }
 
-// "src/auth/jwt.ts" → "src/auth/"   "auth/" → "auth/"   "README.md" → "root"
-// Skips truncated fragments like "sav" or "ru" (no slash, too short, no extension)
-function toModule(raw: string): string {
+// Well-known monorepo root directories — paths under these group at depth 2
+const MONOREPO_ROOTS = ['packages', 'apps', 'services', 'libs', 'modules']
+
+/**
+ * Detect if this repo uses a monorepo layout by checking for common root dirs.
+ */
+export function detectMonorepo(repoRoot: string): boolean {
+  return MONOREPO_ROOTS.some(dir => existsSync(join(repoRoot, dir)))
+}
+
+/**
+ * Convert a raw file path to a module cluster ID.
+ *
+ * Examples (depth=2, monorepo=false):
+ *   "src/auth/jwt.ts"        → "src/auth/"
+ *   "auth/"                  → "auth/"
+ *   "README.md"              → "root/"
+ *
+ * With monorepo=true (or depth=2 and path under packages/):
+ *   "packages/core/src/x.ts" → "packages/core/"
+ *
+ * depth controls how many path segments to keep (1=top-level, 2=two levels, etc.)
+ */
+function toModule(raw: string, depth: number, isMonorepo: boolean): string {
   const p = raw.trim().replace(/^\/|\/$/g, '')
   if (!p) return ''
-  // Looks truncated: ≤3 chars, no dot extension, no slash — skip
+  // Skip truncated artifacts from LLM table parsing
   if (p.length <= 3 && !p.includes('/') && !p.includes('.')) return ''
-  if (p.endsWith('/')) return p
-  if (!p.includes('/')) return p + '/'          // top-level dir like "auth"
-  if (p.includes('.') && !p.endsWith('/')) {    // looks like a file
-    return p.split('/').slice(0, -1).join('/') + '/'
-  }
-  return p.split('/').slice(0, -1).join('/') + '/'
+
+  const parts = p.split('/')
+  // Remove trailing filename (anything with a dot extension)
+  const dirs = parts[parts.length - 1].includes('.') ? parts.slice(0, -1) : parts
+
+  if (dirs.length === 0) return 'root/'
+
+  // Monorepo: always use depth 2 for paths under known monorepo roots
+  const effectiveDepth = (isMonorepo && MONOREPO_ROOTS.includes(dirs[0]) && dirs.length >= 2)
+    ? 2
+    : depth
+
+  return dirs.slice(0, effectiveDepth).join('/') + '/'
 }
 
 function parseDecisions(content: string): Array<{ title: string; affects: string[]; risk: 'low' | 'medium' | 'high' }> {
@@ -59,7 +95,10 @@ function parseRejections(content: string): string[] {
   return [...content.matchAll(/^## (.+?) — rejected/gm)].map(m => m[1])
 }
 
-export function buildGraphData(root: string): GraphData {
+export function buildGraphData(root: string, opts: GraphOptions = {}): GraphData {
+  const isMonorepo = opts.monorepo ?? detectMonorepo(root)
+  const depth = opts.depth ?? (isMonorepo ? 2 : 2)   // default depth=2; future: allow 1 or 3
+
   const decisions = parseDecisions(readStore(root, 'decisions') ?? '')
   const rejectionTitles = parseRejections(readStore(root, 'rejected') ?? '')
 
@@ -73,7 +112,7 @@ export function buildGraphData(root: string): GraphData {
   const linkMap = new Map<string, GraphLink>()
 
   for (const d of decisions) {
-    const mods = [...new Set(d.affects.map(toModule))].filter(Boolean)
+    const mods = [...new Set(d.affects.map(a => toModule(a, depth, isMonorepo)))].filter(Boolean)
     for (const m of mods) {
       const n = node(m)
       n.decisions++
@@ -109,6 +148,7 @@ export function buildGraphData(root: string): GraphData {
     nodes,
     links: [...linkMap.values()],
     generated: new Date().toISOString(),
+    isMonorepo,
     stats: { decisions: decisions.length, rejections: rejectionTitles.length, modules: nodes.length },
   }
 }

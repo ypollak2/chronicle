@@ -20,7 +20,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.5.5')
+  .version('0.6.0')
 
 program
   .command('init')
@@ -38,6 +38,9 @@ program
   .option('--full', 'include all deep ADR files, not just index')
   .option('--format <format>', 'output format: markdown|xml|plain', 'markdown')
   .option('--min-confidence <n>', 'omit decisions below this confidence threshold (0.0–1.0)')
+  .option('--top <n>', 'return only the N most relevant decisions')
+  .option('--tokens <n>', 'auto-trim output to fit within N tokens (~4 chars/token)')
+  .option('--no-stale', 'skip staleness detection (faster, no git log call)')
   .action(cmdInject)
 
 program
@@ -92,6 +95,8 @@ program
   .description('Generate interactive HTML graph of module topology and decisions')
   .option('--output <file>', 'output filename (default: chronicle-graph.html)')
   .option('--no-open', 'do not open browser after generating')
+  .option('--depth <n>', 'path segments to group by (default: 2)', '2')
+  .option('--monorepo', 'force monorepo mode (auto-detected from packages/ apps/ dirs)')
   .action(cmdGraph)
 
 const session = program.command('session').description('Manage session notes in .lore/sessions/')

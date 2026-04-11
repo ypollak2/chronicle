@@ -1,9 +1,9 @@
-import { findLoreRoot, readStore, lorePath } from '@chronicle/core'
+import { findLoreRoot, readStore, lorePath, rankDecisions, trimToTokenBudget, buildFileModMap, annotateStaleDecisions, formatStaleWarning } from '@chronicle/core'
 import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
 
-export async function cmdInject(opts: { files?: string; full?: boolean; format: string; minConfidence?: string }) {
+export async function cmdInject(opts: { files?: string; full?: boolean; format: string; minConfidence?: string; top?: string; tokens?: string; stale?: boolean }) {
   const root = findLoreRoot()
   if (!root) {
     process.stderr.write(chalk.red('✗  No .lore/ found. Run `chronicle init` first.\n'))
@@ -16,12 +16,26 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
   const index = readStore(root, 'index')
   if (index) sections.push(index)
 
-  // Decisions index (lightweight — just the table), filtered by min-confidence
+  // Decisions index — filtered by confidence, ranked by relevance, staleness-annotated
   const decisions = readStore(root, 'decisions')
   if (decisions) {
     const minConf = opts.minConfidence ? parseFloat(opts.minConfidence) : 0.0
-    const filtered = minConf > 0 ? filterByConfidence(decisions, minConf) : decisions
-    if (filtered) sections.push(filtered)
+    const topN = opts.top ? parseInt(opts.top, 10) : 0
+    const fileList = opts.files?.split(',').map(f => f.trim()).filter(Boolean)
+    let processed = minConf > 0 ? filterByConfidence(decisions, minConf) : decisions
+
+    // Staleness detection — enabled by default, skip with --no-stale
+    if (opts.stale !== false) {
+      const modMap = buildFileModMap(root)
+      if (modMap.size > 0) {
+        const { annotated, stale } = annotateStaleDecisions(processed, modMap)
+        processed = annotated
+        if (stale.length > 0) sections.push(formatStaleWarning(stale))
+      }
+    }
+
+    processed = rankDecisions(processed, { files: fileList, topN })
+    if (processed) sections.push(processed)
   }
 
   // Rejected — always included (high signal, compact)
@@ -57,16 +71,29 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
     if (compact) sections.push(compact)
   }
 
-  // Most recent session
+  // Sessions: rolling history index + most recent raw session
   const sessionsDir = lorePath(root, 'sessions')
   if (existsSync(sessionsDir)) {
-    const sessions = readdirSync(sessionsDir).filter(f => f.endsWith('.md')).sort().reverse()
-    if (sessions[0]) {
-      sections.push(`## Last Session\n${readFileSync(join(sessionsDir, sessions[0]), 'utf8')}`)
+    const indexFile = join(sessionsDir, '_index.md')
+    const rawSessions = readdirSync(sessionsDir)
+      .filter(f => f.endsWith('.md') && f !== '_index.md')
+      .sort()
+      .reverse()
+
+    // Include compact history index when it exists (covers all sessions in one table)
+    if (existsSync(indexFile)) {
+      sections.push(readFileSync(indexFile, 'utf8'))
+    }
+
+    // Always include the most recent session in full for immediate context
+    if (rawSessions[0]) {
+      sections.push(`## Last Session\n${readFileSync(join(sessionsDir, rawSessions[0]), 'utf8')}`)
     }
   }
 
-  const output = formatOutput(sections.join('\n\n---\n\n'), opts.format)
+  const maxTokens = opts.tokens ? parseInt(opts.tokens, 10) : 0
+  const finalSections = maxTokens > 0 ? trimToTokenBudget(sections, maxTokens) : sections
+  const output = formatOutput(finalSections.join('\n\n---\n\n'), opts.format)
   process.stdout.write(output)
 }
 

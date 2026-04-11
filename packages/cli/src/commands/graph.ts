@@ -4,14 +4,17 @@ import { join } from 'path'
 import { findLoreRoot } from '@chronicle/core'
 import { buildGraphData, type GraphData } from '../graph.js'
 
-export async function cmdGraph(opts: { output?: string; open?: boolean }) {
+export async function cmdGraph(opts: { output?: string; open?: boolean; depth?: string; monorepo?: boolean }) {
   const root = findLoreRoot()
   if (!root) {
     console.error(chalk.red('✗  No .lore/ found. Run `chronicle init` first.'))
     process.exit(1)
   }
 
-  const data = buildGraphData(root)
+  const data = buildGraphData(root, {
+    depth: opts.depth ? parseInt(opts.depth, 10) : undefined,
+    monorepo: opts.monorepo,
+  })
   if (data.nodes.length === 0) {
     console.error(chalk.yellow('⚠  No decisions found in .lore/ — run `chronicle init` first.'))
     process.exit(1)
@@ -135,6 +138,7 @@ export function renderGraphHtml(data: GraphData, projectName: string): string {
     MODULE GRAPH
   </div>
   <span style="color:var(--text-lo);font-size:13px;font-family:var(--mono)">${projectName}</span>
+  ${data.isMonorepo ? '<span style="font-size:10px;font-family:var(--mono);padding:2px 8px;background:var(--surface-top);border-radius:4px;color:var(--primary)">monorepo</span>' : ''}
   <div class="top-stats">
     <div><b id="s-mods">0</b> modules</div>
     <div><b id="s-dec">0</b> decisions</div>

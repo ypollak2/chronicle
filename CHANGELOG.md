@@ -6,6 +6,49 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-04-11
+
+### Added
+
+**Relevance-ranked inject (`chronicle inject`)**
+- `--top <n>` — return only the N most relevant decisions (ranked by heuristic score)
+- `--tokens <n>` — auto-trim output to fit within N tokens (~4 chars/token)
+- `--min-confidence <n>` — omit decisions below a confidence threshold (0.0–1.0)
+- `rankDecisions()` in `@chronicle/core` — heuristic scoring: file match ×3, recent file ×1, risk bonus (high=+2, medium=+1), age decay, confidence bonus
+- `trimToTokenBudget()` — greedy section trimmer with partial truncation fallback
+
+**Confidence scores on decisions**
+- LLM extraction now returns a `confidence` field (0.0–1.0) per decision
+- Stored as `<!-- confidence:0.72 -->` inline HTML comments in `decisions.md` rows
+- Backward-compatible: existing stores default to `confidence=1.0`
+
+**Staleness detection (`chronicle inject --no-stale`)**
+- Automatically flags decisions whose affected files have been significantly modified since the decision was recorded
+- One-shot `git log --name-only` scan builds a `FileModMap` — no per-decision git calls
+- Stale decisions annotated with `<!-- stale -->` and surfaced as a `⚠️ Potentially Stale Decisions` warning block in inject output
+- Disable with `--no-stale` for faster runs without git access
+
+**Session history index (`chronicle session save`)**
+- Every `session save` now rebuilds `.lore/sessions/_index.md` — a compact markdown table of all sessions
+- `chronicle inject` includes the history index + most recent raw session (not just the last session)
+- `_index.md` is excluded from `session list` and `session show` output
+
+**Graph monorepo awareness (`chronicle graph`)**
+- `--depth <n>` — control how many path segments to group by (default: 2)
+- `--monorepo` — force monorepo mode (auto-detected from `packages/`, `apps/`, `services/`, `libs/` dirs)
+- Paths under monorepo root dirs always group at depth 2 regardless of `--depth`
+- Monorepo badge displayed in graph top-bar when detected
+
+**@chronicle/core exports**
+- `rankDecisions`, `parseDecisionsTable`, `scoreRow`, `estimateTokens`, `trimToTokenBudget` (from `ranker.ts`)
+- `buildFileModMap`, `annotateStaleDecisions`, `formatStaleWarning` (from `staleness.ts`)
+
+### Changed
+- `decisions.md` table now includes `Date` as first column (added in G1)
+- Graph `buildGraphData()` accepts `GraphOptions` with `depth` and `monorepo` fields
+
+---
+
 ## [0.5.0] — 2026-04-10
 
 ### Added
