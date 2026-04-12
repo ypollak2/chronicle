@@ -2,7 +2,7 @@ import { Command } from 'commander'
 import { cmdInit } from './commands/init.js'
 import { cmdInject } from './commands/inject.js'
 import { cmdDeepen } from './commands/deepen.js'
-import { cmdHooksInstall, cmdHooksRemove, cmdCapture, cmdEnrichCommit } from './commands/hooks.js'
+import { cmdHooksInstall, cmdHooksRemove, cmdCapture, cmdEnrichCommit, autoInstallHooksIfNeeded } from './commands/hooks.js'
 import { cmdSetup } from './commands/setup.js'
 import { cmdDiagram } from './commands/diagram.js'
 import { cmdGraph } from './commands/graph.js'
@@ -213,6 +213,14 @@ program
   .description('Manage decision lifecycle: deprecate, supersede, promote, list')
   .option('--by <replacement>', 'for supersede: the decision that replaced it')
   .action((subcommand, title, opts) => cmdDecision({ subcommand, title, by: opts.by }))
+
+// Auto-install hooks on first use in any initialized repo (silent, fast file-stat check)
+const SKIP_AUTO_INSTALL = new Set(['hooks', 'capture', 'enrich-commit', 'merge-driver', 'mcp', 'quickstart'])
+program.hook('preAction', async (thisCommand) => {
+  if (!SKIP_AUTO_INSTALL.has(thisCommand.name())) {
+    await autoInstallHooksIfNeeded()
+  }
+})
 
 // Internal commands (called by hooks/git, not for direct use)
 program

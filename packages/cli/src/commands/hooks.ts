@@ -52,6 +52,29 @@ fi
 exit 0
 `
 
+/**
+ * Auto-install hooks if: we're in a git repo, .lore/ exists, and hooks aren't installed yet.
+ * Called once per CLI invocation (fast — file-stat only, no LLM, no output).
+ */
+/**
+ * Auto-install hooks if: we're in a git repo, .lore/ exists, and hooks aren't installed yet.
+ * Called once per CLI invocation (fast — file-stat only, no LLM, no output).
+ */
+export async function autoInstallHooksIfNeeded(): Promise<void> {
+  const gitRoot = findGitRoot()
+  if (!gitRoot) return
+
+  // Only auto-install if the repo has already been initialized (.lore/ exists)
+  if (!existsSync(join(gitRoot, '.lore'))) return
+
+  const prePushPath = join(gitRoot, '.git', 'hooks', 'pre-push')
+  const alreadyInstalled = existsSync(prePushPath) &&
+    readFileSync(prePushPath, 'utf8').includes(HOOK_MARKER)
+  if (alreadyInstalled) return
+
+  await cmdHooksInstall({ silent: true })
+}
+
 export async function cmdHooksInstall({ silent = false } = {}) {
   const root = findGitRoot()
   if (!root) {
