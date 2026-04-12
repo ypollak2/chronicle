@@ -6,6 +6,35 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.3] — 2026-04-12
+
+### Fixed
+
+**Claude Code provider — stdin piping bug**
+- Previous invocation `claude -p -` passed the literal string `-` as the message instead of reading from stdin
+- Fixed to `claude --print --output-format text --allowedTools ""` with prompt piped via stdin
+- `--allowedTools ""` prevents the model from using tools during extraction (faster, deterministic)
+- Also accepts `--llm claude` as an alias for `--llm claude-code`
+
+**Codex provider — incorrect subcommand**
+- Previous invocation `codex exec --full-auto -` used a non-existent subcommand
+- Fixed to `codex --approval-mode full-auto --quiet` with prompt via stdin
+- Added JSON extraction fallback: strips any status lines Codex prepends before the JSON block
+
+**`detectProvider()` improvements**
+- Detects `CLAUDE_CODE_ENTRYPOINT` / `CLAUDE_CODE_SESSION_ID` env vars to prefer `claude-code` when running inside a Claude Code session
+- Subscription CLIs (`claude`, `codex`) now rank before API keys — free providers always win
+- Ollama liveness check added to auto-detection (probes `localhost:11434` instead of assuming availability)
+
+### Changed
+
+**README rewritten for clarity**
+- New headline: "Your AI coding assistant keeps forgetting everything. Chronicle fixes that."
+- Problem/solution framing at the top — table showing what gets lost each session
+- LLM provider table updated: subscription CLIs shown first with "Free — uses your existing plan"
+
+---
+
 ## [1.0.2] — 2026-04-12
 
 ### Added
@@ -513,7 +542,8 @@ Initial release of Chronicle — AI-native development memory.
 - Strategy pattern in extractor: v1 ships today, v2/v3 are drop-in replacements
 - Python package delegates to Node — single source of truth, no duplication
 
-[Unreleased]: https://github.com/ypollak2/chronicle/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/ypollak2/chronicle/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/ypollak2/chronicle/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/ypollak2/chronicle/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ypollak2/chronicle/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ypollak2/chronicle/compare/v0.13.0...v1.0.0

@@ -30,7 +30,7 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('1.0.2')
+  .version('1.0.3')
   .option('--debug', 'enable verbose debug output to stderr (or set CHRONICLE_DEBUG=1)')
   .hook('preAction', (thisCommand) => {
     if ((thisCommand.opts() as { debug?: boolean }).debug) {

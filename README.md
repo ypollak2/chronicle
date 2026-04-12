@@ -1,32 +1,55 @@
 # Chronicle
 
-> AI-native development memory — markdown RAG for every AI coding tool
+**Your AI coding assistant keeps forgetting everything. Chronicle fixes that.**
 
 [![CI](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml/badge.svg)](https://github.com/ypollak2/chronicle/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/chronicle-dev)](https://pypi.org/project/chronicle-dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Chronicle builds a living knowledge base inside your repo. It scans your git history, captures architectural decisions as you work, and injects compressed context into any AI coding tool — without a vector database, without embeddings, without infrastructure.
+Every AI session starts blank. You explain the same context over and over — why you chose this architecture, what you already tried, what broke last time. Chronicle captures that knowledge automatically from your git history and injects it into every AI session so you never repeat yourself.
 
-**v1.0.1 — Production-ready: eval harness (100% self-KPI), decision lifecycle, schema migration, interactive quickstart.** See [CHANGELOG.md](./CHANGELOG.md).
+**No vector database. No embeddings server. No infrastructure. Just markdown files in your repo.**
 
-**Just markdown files.**
+```bash
+pip install chronicle-dev
+chronicle init        # scan git history → build .lore/ knowledge base
+chronicle inject | claude   # every future session starts with full context
+```
+
+> v1.0.2 — See [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
-## Why
+## The Problem
 
-Code shows what *exists*. It doesn't show:
-- What was **tried and rejected** (and why)
-- Why a particular approach was **chosen over alternatives**
-- What context a future AI session **needs to not repeat past mistakes**
+Every time you start a new AI coding session, you lose:
 
-Chronicle captures the invisible layer.
+| What's lost | Why it matters |
+|-------------|---------------|
+| Why you chose this architecture | The AI suggests the same rejected approach again |
+| What you already tried | You waste time re-exploring dead ends |
+| Which files are fragile | The AI breaks things it shouldn't touch |
+| What decisions are still active | The AI contradicts your previous choices |
+
+Chronicle captures this invisible layer automatically — from your git history, your decisions as you work, and your session notes.
+
+## How It Works
+
+```
+git history → chronicle init → .lore/ knowledge base → chronicle inject → any AI tool
+                                        ↑
+                          git hooks keep it current automatically
+```
+
+1. **Bootstrap once**: `chronicle init` scans your git history, extracts architectural decisions using a cheap LLM (or your Claude Code / Codex subscription — no extra cost), and builds a `.lore/` store of markdown files.
+
+2. **Stays current automatically**: A git hook runs after every commit. A pre-push hook updates `.lore/` before every push. Zero extra steps.
+
+3. **Works with every AI tool**: `chronicle inject | claude` — pipe context into any tool. Or use the native MCP server for Claude Code.
 
 ```markdown
 ## Rejected: Prisma ORM — 2025-03-10
-Replaced by raw `pg` queries. Type conflicts with Zod schemas caused
-3 broken integration tests. Do not reintroduce.
+Replaced by raw pg queries. Type conflicts with Zod schemas caused 3 broken tests. Do not reintroduce.
 
 ## Decision: JWT over sessions — 2025-04-08 [risk: high]
 Affects: auth/, api/middleware.ts
@@ -49,18 +72,24 @@ The pip package bundles the Node.js CLI — no separate `npm install` needed.
 
 ### LLM provider
 
-Chronicle needs one API key to analyze your git history:
+Chronicle uses a cheap LLM to analyze git diffs and extract decisions. It auto-detects what you already have — no setup needed if you use Claude Code or Codex:
 
-| Provider | Env var | Notes |
-|----------|---------|-------|
-| **Gemini** (default) | `GEMINI_API_KEY` | Free tier. Fast, high quality |
-| **OpenAI** | `OPENAI_API_KEY` | GPT-4o-mini |
-| **Anthropic** | `ANTHROPIC_API_KEY` | Claude Haiku |
-| **Ollama** | _(none)_ | Local, free, slower |
+| Provider | How | Cost |
+|----------|-----|------|
+| **Claude Code** | `claude` CLI (subscription) | Free — uses your existing plan |
+| **Codex** | `codex` CLI (subscription) | Free — uses your existing plan |
+| **Gemini** | `GEMINI_API_KEY` | Free tier available |
+| **OpenAI** | `OPENAI_API_KEY` | ~$0.01 per 1000 commits |
+| **Anthropic** | `ANTHROPIC_API_KEY` | ~$0.01 per 1000 commits |
+| **Ollama** | local, no key | Free, slower |
 
 ```bash
-export GEMINI_API_KEY=...    # get from aistudio.google.com/apikey
-chronicle init --llm gemini  # or anthropic / openai / ollama
+# If you use Claude Code or Codex — no config needed, auto-detected:
+chronicle init
+
+# Or set an API key:
+export GEMINI_API_KEY=...    # free tier: aistudio.google.com/apikey
+chronicle init --llm gemini
 ```
 
 ---
