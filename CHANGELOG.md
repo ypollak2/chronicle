@@ -6,6 +6,33 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.2] — 2026-04-12
+
+### Added
+
+**Auto-install git hooks on first use**
+- When any `chronicle` command runs in a git repo that has `.lore/` but no Chronicle hooks, hooks are silently installed automatically — no `chronicle hooks install` needed
+- Check is a fast file-stat (no LLM, no output to the user)
+- Skipped for internal commands (`capture`, `enrich-commit`, `merge-driver`, `mcp`, `quickstart`, `hooks`)
+
+**`pre-push` hook — local `.lore/` auto-update**
+- New git hook that runs `chronicle process` synchronously before each `git push`
+- If `.lore/` changed, commits the updates with `[skip ci]` so the remote always receives a fresh store
+- Uses existing local LLM credentials — no GitHub Actions secret or separate API key needed
+- `chronicle hooks remove` also removes the pre-push hook
+
+**`chronicle.yml` simplified**
+- CI workflow no longer needs an LLM API key or GitHub secret
+- Reduced to a lightweight `chronicle verify --max-lag 10` freshness gate
+- All `.lore/` updates now happen locally via the pre-push hook
+
+**Docs updated to v1.0.x**
+- README: version badge → v1.0.1, full commands table with all 26 commands across 5 groups
+- CHANGELOG: v1.0.0 and v1.0.1 entries added
+- ARCHITECTURE: correct store structure, package tree, release process, decision lifecycle, eval harness sections; shipped tool adapters (removed stale "Phase 4" labels)
+
+---
+
 ## [1.0.1] — 2026-04-12
 
 ### Fixed
@@ -486,7 +513,8 @@ Initial release of Chronicle — AI-native development memory.
 - Strategy pattern in extractor: v1 ships today, v2/v3 are drop-in replacements
 - Python package delegates to Node — single source of truth, no duplication
 
-[Unreleased]: https://github.com/ypollak2/chronicle/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ypollak2/chronicle/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/ypollak2/chronicle/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/ypollak2/chronicle/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ypollak2/chronicle/compare/v0.13.0...v1.0.0
 [0.13.0]: https://github.com/ypollak2/chronicle/compare/v0.12.0...v0.13.0

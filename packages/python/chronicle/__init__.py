@@ -9,4 +9,4 @@ Example:
     result = subprocess.run(["chronicle", "inject"], capture_output=True, text=True)
     context = result.stdout
 """
-__version__ = "0.13.0"
+__version__ = "1.0.2"
