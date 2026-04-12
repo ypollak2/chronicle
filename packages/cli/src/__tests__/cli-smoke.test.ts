@@ -334,15 +334,16 @@ describe('chronicle verify — freshness detection', () => {
 
   beforeEach(() => {
     root = makeTempDir()
-    // Build a minimal git repo so git log works
+    // Build a git repo with a substantive commit (25 lines → passes MIN_DIFF_LINES=20)
+    // so getCommits() picks it up and verify correctly counts it as unprocessed.
     const { execSync: exec } = require('child_process')
     exec('git init', { cwd: root })
     exec('git config user.email "t@t.com"', { cwd: root })
     exec('git config user.name "T"', { cwd: root })
-    writeFileSync(join(root, 'file.ts'), 'export {}')
-    exec('git add . && git commit -m "init"', { cwd: root })
+    const bigFile = Array.from({ length: 25 }, (_, i) => `export const v${i} = ${i}`).join('\n')
+    writeFileSync(join(root, 'module.ts'), bigFile)
+    exec('git add . && git commit -m "feat: add module with 25 exports"', { cwd: root })
     initStore(root)
-    // Write a minimal decisions.md so cmdVerify doesn't exit on missing file
     writeStore(root, 'decisions', '# Decision Log\n\n| Date | Decision | Affects | Risk |\n|------|----------|---------|------|\n')
     process.chdir(root)
   })

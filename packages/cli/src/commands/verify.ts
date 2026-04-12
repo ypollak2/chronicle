@@ -17,7 +17,7 @@ import { execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
-import { findLoreRoot, lorePath } from '@chronicle/core'
+import { findLoreRoot, lorePath, getCommits } from '@chronicle/core'
 
 export interface VerifyResult {
   fresh: boolean
@@ -63,22 +63,14 @@ export async function cmdVerify(opts: {
     process.exit(1)
   }
 
-  // Find how many commits have happened since the last cache update
+  // Find how many substantive commits have happened since the last cache update.
+  // Uses the same getCommits() scanner as `chronicle process` so that trivial commits
+  // (chore, docs, lockfile bumps — below MIN_DIFF_LINES=20) are not counted as stale.
   const cacheFile = join(loreDirPath, '.extraction-cache.json')
   const cachedHashes = loadCachedHashes(cacheFile)
 
-  let recentCommits: string[] = []
-  try {
-    const raw = execSync(
-      `git -C "${root}" log --since="3 months ago" --no-merges --format="%H" | head -200`,
-      { maxBuffer: 1024 * 1024 }
-    ).toString().trim()
-    recentCommits = raw.split('\n').filter(Boolean)
-  } catch {
-    // Not a git repo or git unavailable — skip
-  }
-
-  const unprocessed = recentCommits.filter(h => !cachedHashes.has(h))
+  const recentCommits = getCommits(root, '3months')
+  const unprocessed = recentCommits.filter(c => !cachedHashes.has(c.hash))
   const lastUpdated = getLastLoreUpdate(root, loreDirPath)
   const fresh = unprocessed.length <= maxLag
 
