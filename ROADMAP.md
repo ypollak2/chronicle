@@ -2,7 +2,7 @@
 
 > Chronicle is evolving from a **decision-capture tool** into a **full multi-source RAG system** for AI coding tools — spanning multiple repositories, non-git knowledge sources, semantic retrieval, and a CI-native self-maintaining store.
 
-Current stable release: **v0.12.0**
+Current stable release: **v0.13.0**
 
 ---
 
@@ -13,9 +13,9 @@ Today Chronicle answers: *"what architectural decisions were made in this repo, 
 The roadmap answers: *"how does a repo maintain its own living knowledge base, automatically, at every commit, in a form that is maximally useful to every AI coding tool?"*
 
 ```
-v0.12.0  ──▶  v0.13.0  ──▶  v0.14.0  ──▶  v1.0.0
-current       core fixes    stability     production
-              (P0/P1)       & tests       ready
+v0.13.0  ──▶  v1.0.0
+current       production
+(shipped)     ready
 ```
 
 ---
@@ -34,46 +34,7 @@ current       core fixes    stability     production
 | v0.8.0 | Multi-source | Federation, non-git ingestion, unified search, `decisions.md` merge driver |
 | v0.9.0 | Intelligence | Decision DAG (`relate`), business context (`context`), ownership (`who`), `verify`, `process`, GitHub Actions workflow, 149-test suite |
 | v0.12.0 | Quality | `chronicle status`, confidence threshold filtering, extraction error tracking, evolution risk sorting, CI job summary, 202-test suite |
-
----
-
-## v0.13.0 — Core Fixes (P0/P1) — Active
-
-> **Theme:** Make the self-maintaining RAG loop actually correct and verifiable.
-> **Routing:** llm_code/moderate for logic fixes · llm_code/simple for config · llm_code/complex for integration tests
-
-### Phase 1 — Blockers (sequential)
-
-| # | Task | Route | Effort |
-|---|------|-------|--------|
-| [#40] | Fix `evolution.md` date filtering — `getDecisionsInRange()` shows identical decisions in all 16 eras | `code/moderate` | S |
-| [#41] | Generate `index.md` during `chronicle init` — project summary + constraints; inject output has no frame without it | `code/moderate` | M |
-
-> ⚠ **Breaking change in #40**: existing `evolution.md` files must be deleted and regenerated. Document in release notes.
-
-### Phase 2 — Stability (parallelizable after Phase 1)
-
-| # | Task | Route | Effort |
-|---|------|-------|--------|
-| [#42] | CLI integration tests — init→process→inject→verify as child process against temp git repo | `code/complex` | L |
-| [#43] | Strengthen `doctor` — orphaned ADRs, evolution integrity check, process.log bounds warning | `code/moderate` | M |
-| [#44] | Sync Python version in CI release pipeline — wire `sync-python-version.js` into `release.yml` | `code/simple` | S |
-
-**Acceptance criteria for v0.13.0:**
-- `chronicle evolution --regen` produces eras with era-specific decisions (not identical across all eras)
-- `chronicle init` creates `index.md` in `.lore/` (or fails gracefully with a clear message if LLM call fails)
-- CLI integration test suite covers init→inject pipeline end-to-end
-- `pip install chronicle-dev` installs v0.13.0 (Python version synced)
-
----
-
-## v0.14.0 — Quality & Polish (P2)
-
-| # | Task | Route | Effort |
-|---|------|-------|--------|
-| [#45] | Scope containment — move web viewer, multi-source, tool adapters to parking lot | `auto/simple` | S |
-| [#46] | Bound `process.log` at 500 lines | `code/simple` | S |
-| [#47] | Semantic search as default in `chronicle search` (hybrid when embeddings available) | `code/complex` | M |
+| v0.13.0 | Correctness | Evolution era deduplication fix, `index.md` generation, pipeline integration tests, doctor integrity checks, bounded `process.log`, hybrid search default — 223-test suite |
 
 ---
 

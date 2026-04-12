@@ -773,14 +773,20 @@ describe('chronicle search — keyword fallback (text mode)', () => {
     expect(Array.isArray(result)).toBe(true)
   })
 
-  it('exits 1 when no .lore/ is found', async () => {
+  it('writes error to stderr when no .lore/ is found', async () => {
     const noLoreDir = makeTempDir()
     process.chdir(noLoreDir)
     const { cmdSearch } = await import('../commands/search.js')
-    const exitCode = await withMockedExit(() => cmdSearch('anything', { text: true }))
-    expect(exitCode).toBe(1)
+    const chunks: string[] = []
+    const origStderrWrite = process.stderr.write.bind(process.stderr)
+    ;(process.stderr as NodeJS.WriteStream & { write: (...a: unknown[]) => boolean }).write = (
+      (chunk: unknown) => { chunks.push(String(chunk)); return true }
+    ) as never
+    await withMockedExit(() => cmdSearch('anything', { text: true }))
+    process.stderr.write = origStderrWrite
     process.chdir(root)
     rmSync(noLoreDir, { recursive: true, force: true })
+    expect(chunks.join('')).toMatch(/No .lore/)
   })
 
   it('exits 1 when query is empty', async () => {

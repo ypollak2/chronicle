@@ -6,6 +6,51 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.13.0] — 2026-04-12
+
+### Added
+
+**Pipeline integration tests** (#42)
+- `process --dry-run` tests: verifies commit counting against a real git repo with `MIN_DIFF_LINES`-compliant commits
+- `inject → doctor → verify` chain: full downstream pipeline with pre-built `.lore/` fixture, no LLM calls needed
+- `chronicle search` tests: keyword fallback with `--text` flag, `--json`, exit code coverage
+
+**`chronicle search` defaults to hybrid semantic mode** (#47)
+- Hybrid search (α=0.7 semantic + 0.3 keyword) is now the default when `@huggingface/transformers` is installed
+- Silently falls back to keyword search when transformers are not available (`semanticSearch` returns null)
+- New `--text` flag forces keyword-only mode
+- `--semantic` flag preserved for pure vector similarity mode
+
+**`chronicle doctor` — 3 new integrity checks** (#43)
+- Check 7: orphaned ADR detection — warns when `.lore/decisions/` files are not linked from `decisions.md`
+- Check 8: evolution integrity — detects the corruption pattern where all eras show identical decision counts
+- Check 9: `process.log` bounds — warns when log exceeds 500 lines
+
+**`chronicle process` — bounded log** (#46)
+- `process.log` is auto-truncated to 500 lines after each run (keeps tail, discards oldest entries)
+- `truncateLog()` utility at end of `process.ts`
+
+**`chronicle init` generates `index.md`** (#41)
+- Reads `package.json` (walks up 2 levels) for name, description, version
+- Generates structured `index.md` with Key Constraints and Architecture template sections
+- `chronicle inject` warns on stderr when `index.md` is missing
+
+### Fixed
+
+**`evolution.md` era deduplication** (#40)
+- `getDecisionsInRange()` used inclusive lower bound — same-date decisions flooded all eras sharing that date
+- Fix: genesis era keeps `date >= from`; all later eras use `date > from` (exclusive)
+- Row filter changed from `!l.includes('Decision')` (broke when titles contained "Decision") to checking first table cell specifically
+
+### Tests
+
+- New pipeline integration tests in `cli-smoke.test.ts` — 14 new tests across 3 describe blocks
+- Evolution regression: "does not repeat same-date decisions across multiple same-day eras"
+- Doctor integrity checks: 6 new tests (orphaned ADRs, evolution corruption, process.log bounds)
+- Total: 223 tests passing
+
+---
+
 ## [0.12.0] — 2026-04-12
 
 ### Added
@@ -385,7 +430,8 @@ Initial release of Chronicle — AI-native development memory.
 - Strategy pattern in extractor: v1 ships today, v2/v3 are drop-in replacements
 - Python package delegates to Node — single source of truth, no duplication
 
-[Unreleased]: https://github.com/ypollak2/chronicle/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/ypollak2/chronicle/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/ypollak2/chronicle/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ypollak2/chronicle/compare/v0.9.1...v0.12.0
 [0.9.1]: https://github.com/ypollak2/chronicle/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/ypollak2/chronicle/compare/v0.8.0...v0.9.0

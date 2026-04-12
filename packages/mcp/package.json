@@ -1,6 +1,6 @@
 {
   "name": "@chronicle/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for Chronicle — Claude Code native integration",
   "type": "module",
   "bin": {
