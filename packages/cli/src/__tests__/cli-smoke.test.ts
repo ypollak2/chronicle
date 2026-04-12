@@ -327,6 +327,79 @@ describe('chronicle verify', () => {
   })
 })
 
+// ─── chronicle verify — freshness ────────────────────────────────────────────
+
+describe('chronicle verify — freshness detection', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    // Build a minimal git repo so git log works
+    const { execSync: exec } = require('child_process')
+    exec('git init', { cwd: root })
+    exec('git config user.email "t@t.com"', { cwd: root })
+    exec('git config user.name "T"', { cwd: root })
+    writeFileSync(join(root, 'file.ts'), 'export {}')
+    exec('git add . && git commit -m "init"', { cwd: root })
+    initStore(root)
+    // Write a minimal decisions.md so cmdVerify doesn't exit on missing file
+    writeStore(root, 'decisions', '# Decision Log\n\n| Date | Decision | Affects | Risk |\n|------|----------|---------|------|\n')
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('reports unprocessedCommits >= 1 when cache is empty', async () => {
+    const { cmdVerify } = await import('../commands/verify.js')
+    let jsonOut = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { jsonOut += args.map(String).join(' ') }
+    await withMockedExit(() => cmdVerify({ json: true, maxLag: '100' }))
+    console.log = origLog
+
+    const result = JSON.parse(jsonOut)
+    // Repo has at least 1 commit with no cache entries → must be unprocessed
+    expect(result.unprocessedCommits).toBeGreaterThanOrEqual(1)
+  })
+
+  it('reports unprocessedCommits=0 when all commits are cached', async () => {
+    const { execSync: exec } = require('child_process')
+    // Get the actual commit hash
+    const hash = exec('git log -1 --format=%H', { cwd: root }).toString().trim()
+    // Write a cache file containing that hash
+    const cacheData = JSON.stringify({ [hash]: { isDecision: false, isRejection: false, title: '', affects: [], risk: 'low', confidence: 0, rationale: '', isDeep: false } })
+    writeFileSync(join(lorePath(root), '.extraction-cache.json'), cacheData)
+
+    const { cmdVerify } = await import('../commands/verify.js')
+    let jsonOut = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { jsonOut += args.map(String).join(' ') }
+    await withMockedExit(() => cmdVerify({ json: true, maxLag: '0' }))
+    console.log = origLog
+
+    const result = JSON.parse(jsonOut)
+    expect(result.unprocessedCommits).toBe(0)
+    expect(result.fresh).toBe(true)
+  })
+
+  it('exits 1 and reports stale when unprocessed commits exceed maxLag', async () => {
+    const { cmdVerify } = await import('../commands/verify.js')
+    let jsonOut = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { jsonOut += args.map(String).join(' ') }
+    const exitCode = await withMockedExit(() => cmdVerify({ json: true, maxLag: '0' }))
+    console.log = origLog
+
+    const result = JSON.parse(jsonOut)
+    // maxLag=0 and cache is empty → at least 1 commit is unprocessed → stale
+    expect(result.fresh).toBe(false)
+    expect(exitCode).toBe(1)
+  })
+})
+
 // ─── chronicle process --dry-run ──────────────────────────────────────────────
 
 describe('chronicle process', () => {
@@ -368,5 +441,135 @@ describe('chronicle process', () => {
 
     renameSync(loreHidden, loreDir)  // restore before afterEach cleanup
     expect(exitCode).toBe(1)
+  })
+})
+
+// ─── chronicle doctor — new checks ───────────────────────────────────────────
+// Doctor calls process.exit(1) when there are git errors (no .git dir in temp).
+// We use withMockedExit so the test can capture output without throwing.
+
+describe('chronicle doctor — orphaned ADRs', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('reports ok when all ADR files are linked from decisions.md', async () => {
+    const adrDir = join(root, '.lore', 'decisions')
+    mkdirSync(adrDir, { recursive: true })
+    writeFileSync(join(adrDir, 'use-jwt.md'), '# Use JWT\n')
+    writeStore(root, 'decisions', `# Decision Log\n\n| Date | Decision | Affects | Risk | ADR |\n|------|----------|---------|------|-----|\n| 2026-04-01 | Use JWT | src/auth/ | high | [→](decisions/use-jwt.md) |\n`)
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/1 files in decisions/)
+    expect(out).not.toMatch(/orphaned/)
+  })
+
+  it('warns when an ADR file is not linked from decisions.md', async () => {
+    const adrDir = join(root, '.lore', 'decisions')
+    mkdirSync(adrDir, { recursive: true })
+    writeFileSync(join(adrDir, 'orphaned-decision.md'), '# Orphaned\n')
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/orphaned/)
+    expect(out).toMatch(/orphaned-decision\.md/)
+  })
+})
+
+describe('chronicle doctor — evolution integrity', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('reports ok when eras have distinct decision counts', async () => {
+    writeStore(root, 'evolution',
+      '# Project — System Evolution\n\n' +
+      '## Era: Genesis → v0.1.0\n\n**Decisions (3):**\n- A\n- B\n- C\n\n---\n\n' +
+      '## Era: v0.1.0 → v0.2.0\n\n**Decisions (1):**\n- D\n\n---\n'
+    )
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/Evolution integrity/)
+    expect(out).toMatch(/distinct/)
+  })
+
+  it('warns when all eras show the same decision count (corruption pattern)', async () => {
+    const era = (tag: string) =>
+      `## Era: ${tag}\n\n**Decisions (5):** A, B, C, D, E\n\n---\n`
+    writeStore(root, 'evolution',
+      '# Project — System Evolution\n\n' +
+      era('Genesis → v0.1.0') +
+      era('v0.1.0 → v0.2.0') +
+      era('v0.2.0 → v0.3.0')
+    )
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/Evolution integrity/)
+    expect(out).toMatch(/corruption|regen/)
+  })
+})
+
+describe('chronicle doctor — process.log bounds', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('warns when process.log exceeds 500 lines', async () => {
+    const logPath = join(root, '.lore', 'process.log')
+    const lines = Array.from({ length: 600 }, (_, i) =>
+      `2026-04-01T00:00:00.000Z | commits:1 decisions:${i} errors:0`
+    )
+    writeFileSync(logPath, lines.join('\n') + '\n')
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/process\.log/)
+    expect(out).toMatch(/600|exceeds/)
+  })
+
+  it('reports ok when process.log is within bounds', async () => {
+    const logPath = join(root, '.lore', 'process.log')
+    writeFileSync(logPath, '2026-04-01T00:00:00.000Z | commits:1 decisions:1 errors:0\n')
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    expect(out).toMatch(/process\.log.*1 lines/)
+    expect(out).not.toMatch(/exceeds/)
   })
 })

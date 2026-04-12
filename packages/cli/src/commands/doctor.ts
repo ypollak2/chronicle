@@ -83,12 +83,55 @@ export async function cmdDoctor() {
     detail: hasHook ? 'post-commit hook installed' : 'Not installed — run `chronicle hooks install`'
   })
 
-  // 7. ADR count
+  // 7. ADR count + orphan detection (files in decisions/ not linked from decisions.md)
   const adrDir = lorePath(root, 'decisions')
-  const adrCount = existsSync(adrDir)
-    ? readdirSync(adrDir).filter(f => f.endsWith('.md')).length
-    : 0
-  checks.push({ label: 'Deep ADRs', status: 'ok', detail: `${adrCount} files in decisions/` })
+  const adrFiles = existsSync(adrDir)
+    ? readdirSync(adrDir).filter(f => f.endsWith('.md'))
+    : []
+  const adrCount = adrFiles.length
+  if (adrCount > 0 && existsSync(decisionsFile)) {
+    const decisionsContent = readFileSync(decisionsFile, 'utf8')
+    const orphans = adrFiles.filter(f => !decisionsContent.includes(`decisions/${f}`))
+    checks.push({
+      label: 'Deep ADRs',
+      status: orphans.length === 0 ? 'ok' : 'warn',
+      detail: orphans.length === 0
+        ? `${adrCount} files in decisions/`
+        : `${adrCount} files — ${orphans.length} orphaned (not linked from decisions.md): ${orphans.join(', ')}`
+    })
+  } else {
+    checks.push({ label: 'Deep ADRs', status: 'ok', detail: `${adrCount} files in decisions/` })
+  }
+
+  // 8. Evolution integrity — flag when all eras have the same decision count (corruption pattern)
+  const evolutionFile = lorePath(root, STORE_FILES.evolution)
+  if (existsSync(evolutionFile)) {
+    const evolutionContent = readFileSync(evolutionFile, 'utf8')
+    const eraDecisionCounts = [...evolutionContent.matchAll(/^\*\*Decisions \((\d+)\)/gm)]
+      .map(m => parseInt(m[1], 10))
+    const allSame = eraDecisionCounts.length > 2 &&
+      eraDecisionCounts.every(n => n === eraDecisionCounts[0])
+    checks.push({
+      label: 'Evolution integrity',
+      status: allSame ? 'warn' : 'ok',
+      detail: allSame
+        ? `All ${eraDecisionCounts.length} eras show ${eraDecisionCounts[0]} decisions — possible corruption, run \`chronicle evolution --regen\``
+        : 'Eras have distinct decision sets'
+    })
+  }
+
+  // 9. process.log bounds
+  const logPath = lorePath(root, 'process.log')
+  if (existsSync(logPath)) {
+    const lineCount = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).length
+    checks.push({
+      label: 'process.log',
+      status: lineCount > 500 ? 'warn' : 'ok',
+      detail: lineCount > 500
+        ? `${lineCount} lines — exceeds 500-line limit, run \`chronicle process\` to auto-truncate`
+        : `${lineCount} lines`
+    })
+  }
 
   printReport(checks)
 

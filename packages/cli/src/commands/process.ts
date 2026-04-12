@@ -31,6 +31,7 @@ export async function cmdProcess(opts: {
   llm?: string
   fromCommit?: string
   dryRun?: boolean
+  minConfidence?: number
 }): Promise<void> {
   const root = findLoreRoot()
   if (!root) {
@@ -72,17 +73,20 @@ export async function cmdProcess(opts: {
 
   console.log(chalk.cyan(`⟳  Processing ${uncached.length} commits...`))
 
+  const threshold = opts.minConfidence ?? 0.5
+  const extractionCtx = { errors: 0 }
   const startMs = Date.now()
   let decisionsAdded = 0
   let rejectionsAdded = 0
   let deepAdrsAdded = 0
-  let errors = 0
+  let lowConfidenceAdded = 0
 
   try {
     const results = await extractFromCommits(uncached, llm, {
       strategy: 'simple',
       cache,
       concurrency: 4,
+      ctx: extractionCtx,
     })
 
     // Get author for the processed commits
@@ -97,15 +101,23 @@ export async function cmdProcess(opts: {
         rejectionsAdded++
       }
       if (r.isDecision) {
-        if (r.isDeep) {
-          writeDeepDecision(root, slugify(r.title), formatDeepADR(r))
-          deepAdrsAdded++
-        }
         const authorComment = authorEmail ? ` <!-- author:${authorEmail} -->` : ''
         const date = r.date ?? new Date().toISOString().slice(0, 10)
-        const row = `| ${date} | ${r.title.slice(0, 50)} | ${r.affects.join(', ').slice(0, 40)} | ${r.risk} | <!-- confidence:${r.confidence.toFixed(2)} -->${r.isDeep ? ` [→](decisions/${slugify(r.title)}.md)` : ''}${authorComment}`
-        appendToStore(root, 'decisions', row)
-        decisionsAdded++
+        const conf = r.confidence ?? 1.0
+        if (conf >= threshold) {
+          if (r.isDeep) {
+            writeDeepDecision(root, slugify(r.title), formatDeepADR(r))
+            deepAdrsAdded++
+          }
+          const row = `| ${date} | ${r.title.slice(0, 50)} | ${r.affects.join(', ').slice(0, 40)} | ${r.risk} | <!-- confidence:${conf.toFixed(2)} -->${r.isDeep ? ` [→](decisions/${slugify(r.title)}.md)` : ''}${authorComment}`
+          appendToStore(root, 'decisions', row)
+          decisionsAdded++
+        } else {
+          // Below threshold — quarantine rather than discard
+          const row = `| ${date} | ${r.title.slice(0, 50)} | ${r.affects.join(', ').slice(0, 40)} | ${r.risk} | <!-- confidence:${conf.toFixed(2)} -->${authorComment}`
+          appendToStore(root, 'low-confidence', row)
+          lowConfidenceAdded++
+        }
       }
     }
   } catch (err) {
@@ -116,18 +128,29 @@ export async function cmdProcess(opts: {
 
   const elapsedSec = ((Date.now() - startMs) / 1000).toFixed(1)
 
-  // Write process log
-  const logLine = `${new Date().toISOString()} | commits:${uncached.length} decisions:${decisionsAdded} rejections:${rejectionsAdded} deep:${deepAdrsAdded} errors:${errors} elapsed:${elapsedSec}s`
+  // Write process log — bounded at 500 lines to prevent unbounded growth
+  const logLine = `${new Date().toISOString()} | commits:${uncached.length} decisions:${decisionsAdded} rejections:${rejectionsAdded} deep:${deepAdrsAdded} low-confidence:${lowConfidenceAdded} errors:${extractionCtx.errors} elapsed:${elapsedSec}s`
   const logPath = lorePath(root, 'process.log')
   appendFileSync(logPath, logLine + '\n')
+  truncateLog(logPath, 500)
 
   // Summary output
   console.log(chalk.green(`✓  Processed ${uncached.length} commits in ${elapsedSec}s`))
   if (decisionsAdded > 0) console.log(chalk.cyan(`   +${decisionsAdded} decisions`))
   if (rejectionsAdded > 0) console.log(chalk.cyan(`   +${rejectionsAdded} rejections`))
   if (deepAdrsAdded > 0) console.log(chalk.cyan(`   +${deepAdrsAdded} deep ADRs`))
-  if (errors > 0) {
-    console.error(chalk.red(`   ${errors} errors`))
+  if (lowConfidenceAdded > 0) console.log(chalk.dim(`   +${lowConfidenceAdded} low-confidence (< ${threshold}) → .lore/low-confidence.md`))
+  if (extractionCtx.errors > 0) {
+    console.error(chalk.red(`   ${extractionCtx.errors} extraction errors (LLM returned malformed JSON after retries)`))
     process.exit(1)
+  }
+}
+
+// Keep process.log from growing unbounded — retain only the most recent maxLines entries.
+function truncateLog(logPath: string, maxLines: number): void {
+  if (!existsSync(logPath)) return
+  const lines = readFileSync(logPath, 'utf8').split('\n').filter(Boolean)
+  if (lines.length > maxLines) {
+    writeFileSync(logPath, lines.slice(-maxLines).join('\n') + '\n')
   }
 }
