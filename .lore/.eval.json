@@ -1,0 +1,146 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-04-12T14:02:27.273Z",
+  "cases": [
+    {
+      "id": "decision-1",
+      "type": "decision_recall",
+      "query": "Monorepo: @chronicle/core library + CLI package split",
+      "expectedText": "Monorepo: @chronicle/core libr",
+      "description": "Decision \"Monorepo: @chronicle/core library + CLI package sp\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-2",
+      "type": "decision_recall",
+      "query": "Inline HTML comments for decision metadata storage",
+      "expectedText": "Inline HTML comments for decis",
+      "description": "Decision \"Inline HTML comments for decision metadata storage\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-3",
+      "type": "decision_recall",
+      "query": "Git hooks for automatic .lore/ updates on commit",
+      "expectedText": "Git hooks for automatic .lore/",
+      "description": "Decision \"Git hooks for automatic .lore/ updates on commit\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-4",
+      "type": "decision_recall",
+      "query": "MCP server via stdio transport for Claude Code integration",
+      "expectedText": "MCP server via stdio transport",
+      "description": "Decision \"MCP server via stdio transport for Claude Code int\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-5",
+      "type": "decision_recall",
+      "query": "Python PyPI package wrapping Node CLI as primary distribution",
+      "expectedText": "Python PyPI package wrapping N",
+      "description": "Decision \"Python PyPI package wrapping Node CLI as primary d\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-6",
+      "type": "decision_recall",
+      "query": "Bundle compiled cli.js inside Python wheel (no npm/npx required)",
+      "expectedText": "Bundle compiled cli.js inside ",
+      "description": "Decision \"Bundle compiled cli.js inside Python wheel (no npm\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-7",
+      "type": "decision_recall",
+      "query": "Tool adapters: auto-setup integrations for 10+ AI coding tools",
+      "expectedText": "Tool adapters: auto-setup inte",
+      "description": "Decision \"Tool adapters: auto-setup integrations for 10+ AI \" should appear in decisions.md"
+    },
+    {
+      "id": "decision-8",
+      "type": "decision_recall",
+      "query": "Evolution records use git tags as era boundaries",
+      "expectedText": "Evolution records use git tags",
+      "description": "Decision \"Evolution records use git tags as era boundaries\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-9",
+      "type": "decision_recall",
+      "query": "Semantic clustering extraction strategy (v2): cluster by file overlap",
+      "expectedText": "Semantic clustering extraction",
+      "description": "Decision \"Semantic clustering extraction strategy (v2): clus\" should appear in decisions.md"
+    },
+    {
+      "id": "decision-10",
+      "type": "decision_recall",
+      "query": "tsup with splitting=false to produce single-file CLI bundle",
+      "expectedText": "tsup with splitting=false to p",
+      "description": "Decision \"tsup with splitting=false to produce single-file C\" should appear in decisions.md"
+    },
+    {
+      "id": "rejection-1",
+      "type": "rejection_hit",
+      "query": "npm as sole distribution channel",
+      "expectedText": "npm as sole distribution chann",
+      "description": "Rejection \"npm as sole distribution channel\" should appear in rejected.md"
+    },
+    {
+      "id": "rejection-2",
+      "type": "rejection_hit",
+      "query": "Separate @chronicle/mcp package",
+      "expectedText": "Separate @chronicle/mcp packag",
+      "description": "Rejection \"Separate @chronicle/mcp package\" should appear in rejected.md"
+    },
+    {
+      "id": "rejection-3",
+      "type": "rejection_hit",
+      "query": "Per-commit LLM calls (no batching)",
+      "expectedText": "Per-commit LLM calls (no batch",
+      "description": "Rejection \"Per-commit LLM calls (no batching)\" should appear in rejected.md"
+    },
+    {
+      "id": "rejection-4",
+      "type": "rejection_hit",
+      "query": "two-pass extraction strategy",
+      "expectedText": "two-pass extraction strategy",
+      "description": "Rejection \"two-pass extraction strategy\" should appear in rejected.md"
+    },
+    {
+      "id": "rejection-5",
+      "type": "rejection_hit",
+      "query": "SQLite extraction cache",
+      "expectedText": "SQLite extraction cache",
+      "description": "Rejection \"SQLite extraction cache\" should appear in rejected.md"
+    },
+    {
+      "id": "semantic-1",
+      "type": "semantic_mrr",
+      "query": "why did we monorepo: @chronicle/core library + cli package split",
+      "expectedText": "Monorepo: @chronicle",
+      "description": "Semantic query for \"Monorepo: @chronicle/core library + CLI \""
+    },
+    {
+      "id": "semantic-2",
+      "type": "semantic_mrr",
+      "query": "why did we inline html comments for decision metadata storage",
+      "expectedText": "Inline HTML comments",
+      "description": "Semantic query for \"Inline HTML comments for decision metada\""
+    },
+    {
+      "id": "semantic-3",
+      "type": "semantic_mrr",
+      "query": "why did we git hooks for automatic .lore/ updates on commit",
+      "expectedText": "Git hooks for automa",
+      "description": "Semantic query for \"Git hooks for automatic .lore/ updates o\""
+    },
+    {
+      "id": "semantic-4",
+      "type": "semantic_mrr",
+      "query": "why did we mcp server via stdio transport for claude code integration",
+      "expectedText": "MCP server via stdio",
+      "description": "Semantic query for \"MCP server via stdio transport for Claud\""
+    },
+    {
+      "id": "semantic-5",
+      "type": "semantic_mrr",
+      "query": "why did we python pypi package wrapping node cli as primary distribution",
+      "expectedText": "Python PyPI package ",
+      "description": "Semantic query for \"Python PyPI package wrapping Node CLI as\""
+    }
+  ]
+}
