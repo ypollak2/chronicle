@@ -24,9 +24,13 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
     if (ownershipSection) sections.push(ownershipSection)
   }
 
-  // Always include the index
+  // Always include the index — warn if missing so users know to run chronicle init
   const index = readStore(root, 'index')
-  if (index) sections.push(index)
+  if (index) {
+    sections.push(index)
+  } else {
+    process.stderr.write(chalk.yellow('⚠  index.md missing — run `chronicle init` to generate project summary\n'))
+  }
 
   // Decisions index — filtered by confidence, ranked by relevance, staleness-annotated
   const decisions = readStore(root, 'decisions')
