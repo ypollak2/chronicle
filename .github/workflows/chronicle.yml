@@ -1,46 +1,36 @@
-# Chronicle Auto-Update Workflow
+# Chronicle .lore/ Freshness Gate
 #
-# Runs on every push to main, processes new commits through chronicle,
-# and commits the updated .lore/ back to the repo.
+# The pre-push git hook (installed by `chronicle hooks install`) handles
+# .lore/ updates locally — no CI secret or LLM key needed.
 #
-# This is what closes the "repo maintains itself" loop:
-#   developer commits → GitHub triggers this workflow → chronicle processes → .lore/ updated
+#   developer commits → pre-push hook runs chronicle process locally
+#                     → commits .lore/ changes [skip ci]
+#                     → pushes both together
 #
-# Requirements:
-#   - ANTHROPIC_API_KEY secret (or CHRONICLE_LLM=openai + OPENAI_API_KEY)
-#   - Write permissions on the repo (GITHUB_TOKEN has this by default)
-#
-# The commit uses [skip ci] to prevent infinite loop triggering.
+# This workflow only runs `chronicle verify` as a CI gate to confirm
+# the push arrived with a fresh store. It does NOT need an LLM API key.
 
-name: Chronicle — Update .lore/
+name: Chronicle — Verify .lore/ Freshness
 
 on:
   push:
     branches: [main]
-    # Don't run on .lore/ updates to prevent infinite loop (belt + suspenders with [skip ci])
     paths-ignore:
       - '.lore/**'
       - '.github/workflows/chronicle.yml'
 
-# Prevent concurrent runs — only one chronicle update at a time
 concurrency:
-  group: chronicle-update
-  cancel-in-progress: false
+  group: chronicle-verify
+  cancel-in-progress: true
 
 jobs:
-  update-lore:
-    name: Process commits & update .lore/
+  verify-lore:
+    name: Verify .lore/ is fresh
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          # Fetch full history so chronicle can scan commits
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -54,102 +44,24 @@ jobs:
       - name: Build chronicle
         run: npm run build
 
-      - name: Check LLM credentials
-        id: llm-check
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ]; then
-            echo "⚠️  No LLM API key configured — skipping chronicle update"
-            echo "   Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY in repository secrets"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Verify .lore/ freshness
+        # Exits 1 if .lore/ lags by more than 10 commits — indicates pre-push hook is not installed
+        run: npx chronicle verify --max-lag 10 || true
+        # || true: new repos without .lore/ bootstrapped should not fail CI
+        # Remove '|| true' once the store is initialized and hooks are installed
 
-      - name: Initialize .lore/ if missing
-        if: steps.llm-check.outputs.skip != 'true'
+      - name: Write freshness summary
         run: |
-          if [ ! -d ".lore" ]; then
-            echo "No .lore/ found — running chronicle init (first time setup)"
-            npx chronicle init --depth 3months --llm auto
-          fi
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CHRONICLE_LLM: ${{ secrets.CHRONICLE_LLM || 'auto' }}
-
-      - name: Process new commits
-        id: process
-        if: steps.llm-check.outputs.skip != 'true'
-        run: |
-          npx chronicle process \
-            --depth 1month \
-            --from-commit "${{ github.event.before }}" \
-            --llm auto
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CHRONICLE_LLM: ${{ secrets.CHRONICLE_LLM || 'auto' }}
-
-      - name: Write .lore/ update summary
-        if: steps.llm-check.outputs.skip != 'true'
-        run: |
+          STATUS=$(node packages/cli/dist/cli.js status --json 2>/dev/null || echo '{}')
           {
-            echo "## Chronicle — .lore/ Update"
+            echo "## Chronicle .lore/ Status"
             echo ""
-            STATUS=$(node packages/cli/dist/cli.js status --json 2>/dev/null || echo '{}')
             DECISIONS=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.decisions||0))}catch{process.stdout.write('?')}")
-            REJECTIONS=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.rejections||0))}catch{process.stdout.write('?')}")
             ADRS=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.deepADRs||0))}catch{process.stdout.write('?')}")
             UNPROCESSED=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.unprocessedCommits||0))}catch{process.stdout.write('?')}")
-            ERRORS=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.extractionErrors||0))}catch{process.stdout.write('0')}")
-            LOW_CONF=$(echo "$STATUS" | node -e "try{const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(s.lowConfidence||0))}catch{process.stdout.write('0')}")
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| Decisions | $DECISIONS |"
-            echo "| Rejections | $REJECTIONS |"
-            echo "| Deep ADRs | $ADRS |"
-            echo "| Unprocessed commits | $UNPROCESSED |"
-            [ "$LOW_CONF" != "0" ] && echo "| Low-confidence results | $LOW_CONF |"
-            [ "$ERRORS" != "0" ] && echo "| ⚠ Extraction errors | $ERRORS |"
+            echo "| Decisions | ADRs | Unprocessed |"
+            echo "|-----------|------|-------------|"
+            echo "| $DECISIONS | $ADRS | $UNPROCESSED |"
             echo ""
-            echo "> Generated by [Chronicle](https://github.com/chronicle-dev/chronicle)"
+            echo "> .lore/ is updated locally by the pre-push hook — no CI key required."
           } >> "$GITHUB_STEP_SUMMARY"
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-      - name: Check if .lore/ changed
-        if: steps.llm-check.outputs.skip != 'true'
-        id: check
-        run: |
-          if git diff --quiet .lore/; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  .lore/ unchanged — no architectural decisions in this push"
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "✓  .lore/ has updates to commit"
-            git diff --stat .lore/
-          fi
-
-      - name: Commit updated .lore/
-        if: steps.check.outputs.changed == 'true'
-        run: |
-          git config user.name  "chronicle-bot"
-          git config user.email "chronicle-bot@users.noreply.github.com"
-          git add .lore/
-          git commit -m "chore(lore): update .lore/ for commits ${{ github.event.before }}...${{ github.sha }} [skip ci]"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify .lore/ freshness (post-update gate)
-        if: steps.llm-check.outputs.skip != 'true'
-        run: npx chronicle verify --max-lag 10 || true
-        # '|| true' because freshly cloned repo may have unprocessed historic commits

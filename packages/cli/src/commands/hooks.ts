@@ -26,6 +26,32 @@ if [ -z "$COMMIT_SOURCE" ]; then
 fi
 `
 
+// The pre-push hook — runs synchronously before git sends anything to the remote.
+// Processes any unprocessed commits using the locally-configured LLM (no CI secret needed),
+// then auto-commits .lore/ changes so the remote always receives an up-to-date store.
+// Failures are non-fatal: if chronicle or the LLM is unavailable, the push proceeds unchanged.
+const PRE_PUSH_HOOK = `#!/bin/sh
+${HOOK_MARKER}
+
+# Skip if .lore/ is not initialised — chronicle not set up yet
+if [ ! -d ".lore" ]; then
+  exit 0
+fi
+
+# Process any commits the post-commit hook may have missed (or ran async/failed)
+# Uses CHRONICLE_LLM env var, or falls back to auto-detection
+chronicle process --quiet 2>/dev/null || true
+
+# If .lore/ has uncommitted changes, commit them now so the remote gets a fresh store.
+# [skip ci] prevents the chronicle.yml workflow from re-running on this meta-commit.
+if ! git diff --quiet .lore/ 2>/dev/null || ! git diff --cached --quiet .lore/ 2>/dev/null; then
+  git add .lore/
+  git -c core.hooksPath=/dev/null commit -m "chore(lore): update .lore/ [skip ci]" --quiet 2>/dev/null || true
+fi
+
+exit 0
+`
+
 export async function cmdHooksInstall({ silent = false } = {}) {
   const root = findGitRoot()
   if (!root) {
@@ -37,6 +63,7 @@ export async function cmdHooksInstall({ silent = false } = {}) {
 
   installHook(hooksDir, 'post-commit', POST_COMMIT_HOOK)
   installHook(hooksDir, 'prepare-commit-msg', PREPARE_COMMIT_MSG_HOOK)
+  installHook(hooksDir, 'pre-push', PRE_PUSH_HOOK)
 
   // M5: register git merge driver for decisions.md conflict-free merges
   try {
@@ -48,6 +75,7 @@ export async function cmdHooksInstall({ silent = false } = {}) {
     console.log(chalk.green('✓  Chronicle hooks installed'))
     console.log(chalk.dim('   post-commit          → captures decisions after each commit (async)'))
     console.log(chalk.dim('   prepare-commit-msg   → enriches commit messages with context'))
+    console.log(chalk.dim('   pre-push             → processes commits + commits .lore/ before push'))
     console.log(chalk.dim('\n   Run `chronicle hooks remove` to uninstall'))
   }
 }
@@ -58,7 +86,7 @@ export async function cmdHooksRemove() {
 
   const hooksDir = join(root, '.git', 'hooks')
 
-  for (const name of ['post-commit', 'prepare-commit-msg']) {
+  for (const name of ['post-commit', 'prepare-commit-msg', 'pre-push']) {
     removeChronicleFromHook(join(hooksDir, name))
   }
 

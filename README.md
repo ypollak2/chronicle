@@ -8,11 +8,9 @@
 
 Chronicle builds a living knowledge base inside your repo. It scans your git history, captures architectural decisions as you work, and injects compressed context into any AI coding tool — without a vector database, without embeddings, without infrastructure.
 
-**v0.12 — Status command, decision DAG, extraction quality improvements.** See [CHANGELOG.md](./CHANGELOG.md).
+**v1.0.1 — Production-ready: eval harness (100% self-KPI), decision lifecycle, schema migration, interactive quickstart.** See [CHANGELOG.md](./CHANGELOG.md).
 
 **Just markdown files.**
-
-> **Roadmap:** Chronicle is growing into a full multi-source RAG system — semantic search, multi-repo federation, non-git knowledge ingestion, and a RAG quality eval harness. See [ROADMAP.md](./ROADMAP.md) for the versioned plan.
 
 ---
 
@@ -179,24 +177,70 @@ Chronicle tools Claude calls automatically:
 
 ## Commands
 
+### Setup & Bootstrap
+
 | Command | Description |
 |---------|-------------|
-| `chronicle init [--depth=6months\|1year\|all] [--llm=gemini\|anthropic\|openai\|ollama] [--limit=N] [--concurrency=N]` | Bootstrap from git history |
-| `chronicle process [--since=<sha>] [--min-confidence=0.5]` | Process new commits and update `.lore/` |
-| `chronicle inject [--files=<paths>] [--full] [--format=markdown\|xml\|plain]` | Output context to stdout |
+| `chronicle quickstart [--yes] [--llm=gemini\|anthropic\|openai\|ollama]` | Interactive 5-minute setup wizard — init + migrate + hooks + tool adapter |
+| `chronicle init [--depth=6months\|1year\|all] [--llm=...] [--limit=N] [--concurrency=N]` | Bootstrap `.lore/` from git history |
+| `chronicle migrate` | Upgrade `.lore/` schema to current version (idempotent) |
+| `chronicle hooks install` | Install git hooks (post-commit capture, prepare-commit-msg) |
+| `chronicle hooks remove` | Remove git hooks |
+| `chronicle setup [--tool=claude-code\|cursor\|aider\|gemini-cli\|copilot\|codex\|...] [--all]` | Install AI tool adapter (generates `.cursorrules`, `GEMINI.md`, etc.) |
+| `chronicle mcp` | Start MCP server for Claude Code (add to `.claude/mcp.json`) |
+
+### Daily Workflow
+
+| Command | Description |
+|---------|-------------|
+| `chronicle inject [--files=<paths>] [--full] [--format=markdown\|xml\|plain] [--query=<text>] [--top=N] [--tokens=N]` | Output compressed context to stdout; pipe into any AI tool |
+| `chronicle process [--since=<sha>] [--min-confidence=0.5]` | Batch-process new commits; CI-safe |
+| `chronicle capture` | Process HEAD commit (called by post-commit hook) |
+| `chronicle deepen [--depth=1year\|all] [--limit=N]` | Extend scan further back without reprocessing |
 | `chronicle status [--json]` | Health summary: decisions, ADRs, unprocessed commits, errors |
-| `chronicle relate [--diagram]` | Show decision relation graph; `--diagram` renders Mermaid DAG |
-| `chronicle deepen [--depth=1year\|all] [--limit=N]` | Extend scan without reprocessing |
-| `chronicle doctor` | Validate `.lore/` health (files, links, cache, hooks) |
-| `chronicle search <query> [--limit=N] [--json]` | Full-text search across knowledge base |
-| `chronicle serve [--port=4242]` | Local web viewer — opens in browser |
+
+### Decisions & Knowledge
+
+| Command | Description |
+|---------|-------------|
+| `chronicle decision list` | Show all decisions with lifecycle status |
+| `chronicle decision deprecate "<title>"` | Mark a decision as deprecated |
+| `chronicle decision supersede "<title>" --by "<new-title>"` | Mark decision as superseded by a newer one |
+| `chronicle decision promote "<title>"` | Promote from `low-confidence.md` to `decisions.md` |
+| `chronicle relate "<title>" --depends-on\|--supersedes\|--related-to "<title>"` | Link decisions in the DAG |
+| `chronicle relate --list [--diagram]` | Print relation graph; `--diagram` renders Mermaid flowchart |
+| `chronicle who <file>` | Show file owner(s) + all decisions and risks affecting the file |
+| `chronicle context add --goal\|--constraint\|--team\|--stack <text>` | Add project context fact |
+| `chronicle context remove\|show\|edit` | Manage project context |
+
+### Analysis & Search
+
+| Command | Description |
+|---------|-------------|
+| `chronicle search <query> [--semantic] [--hybrid] [--text] [--limit=N] [--json]` | Search across all `.lore/` content (hybrid semantic + keyword) |
+| `chronicle eval [--init] [--json] [--verbose]` | Run RAG quality KPIs: Recall ≥80%, Rejection ≥90%, MRR@5 ≥0.70, False Confidence ≤10% |
+| `chronicle doctor` | Validate `.lore/` health (files, links, cache, hooks, ADR orphans) |
+| `chronicle verify [--max-lag=N] [--json]` | CI gate: exits 1 when `.lore/` lags by more than N commits |
+| `chronicle evolution [--regen] [--view]` | Build/view system evolution timeline |
+| `chronicle graph [--depth=N] [--monorepo]` | Interactive HTML topology from module + decision data |
+| `chronicle diagram [--type=architecture\|dependencies\|evolution]` | Generate ASCII diagrams |
+
+### Multi-Source Ingestion
+
+| Command | Description |
+|---------|-------------|
+| `chronicle add --repo\|--dir\|--url\|--pdf <source> [--list] [--remove=<id>]` | Register additional knowledge sources |
+| `chronicle ingest [--id=<id>] [--force]` | Index registered sources into `.lore/chunks/` |
+
+### Sessions
+
+| Command | Description |
+|---------|-------------|
 | `chronicle session save [message]` | Save a session note |
 | `chronicle session list` | List saved sessions |
 | `chronicle session show [n]` | Show last N sessions |
-| `chronicle evolution [--regen] [--view]` | Build/view system evolution timeline |
-| `chronicle diagram [--type=architecture\|dependencies\|evolution]` | Generate ASCII diagrams |
-| `chronicle hooks install` | Install git hooks |
-| `chronicle hooks remove` | Remove git hooks |
+| `chronicle session archive` | Archive old sessions (moves to `.lore/sessions/archive/`) |
+| `chronicle serve [--port=4242]` | Local web viewer — opens in browser |
 
 ---
 
