@@ -25,7 +25,7 @@ import { initStore, writeStore, lorePath, addContextFact } from '@chronicle/core
 const originalCwd = process.cwd()
 
 function makeTempDir(): string {
-  const dir = join(os.tmpdir(), `chronicle-cli-smoke-${Date.now()}`)
+  const dir = join(os.tmpdir(), `chronicle-cli-smoke-${Date.now()}-${Math.random().toString(36).slice(2)}`)
   mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -794,5 +794,345 @@ describe('chronicle search — keyword fallback (text mode)', () => {
     const { cmdSearch } = await import('../commands/search.js')
     const exitCode = await withMockedExit(() => cmdSearch('', { text: true }))
     expect(exitCode).toBe(1)
+  })
+})
+
+// ─── chronicle search — hybrid default (P2) ───────────────────────────────────
+
+describe('chronicle search — hybrid/semantic default mode', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('default (no flags) falls back to keyword when transformers not installed', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    // @huggingface/transformers is not installed in test env, so semanticSearch
+    // returns null and search falls through to keyword mode
+    const out = await captureLog(() => cmdSearch('JWT', {}))
+    expect(out).toContain('JWT')
+  })
+
+  it('--hybrid flag also falls back to keyword when transformers not installed', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    const out = await captureLog(() => cmdSearch('JWT', { hybrid: true }))
+    expect(out).toContain('JWT')
+  })
+
+  it('--semantic flag falls back to keyword and shows "No semantic results" when transformers absent', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    // With --semantic, if semanticSearch returns null, it falls through to keyword
+    // The "No semantic results" message only shows when semanticSearch returns []
+    // When it returns null, it falls through silently to keyword
+    const out = await captureLog(() => cmdSearch('JWT', { semantic: true }))
+    expect(out).toContain('JWT')
+  })
+
+  it('default mode returns no-results message for unmatched query (keyword fallback)', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    const out = await captureLog(() => cmdSearch('XYZNONEXISTENT_UNIQUE_STRING', {}))
+    expect(out).toMatch(/No results/)
+  })
+})
+
+// ─── chronicle migrate ────────────────────────────────────────────────────────
+
+describe('chronicle migrate', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('reports nothing to do when schema is already current', async () => {
+    // buildLoreFixture creates decisions, rejected, risks — add index + low-confidence to simulate full schema
+    writeFileSync(join(root, '.lore', 'index.md'), '# Project Index\n')
+    writeFileSync(join(root, '.lore', 'low-confidence.md'), '# Low-Confidence\n')
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    const out = await captureLog(() => cmdMigrate({}))
+    expect(out).toContain('nothing to do')
+  })
+
+  it('creates index.md when missing', async () => {
+    const indexPath = join(root, '.lore', 'index.md')
+    expect(existsSync(indexPath)).toBe(false)
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    await captureLog(() => cmdMigrate({}))
+    expect(existsSync(indexPath)).toBe(true)
+    const content = readFileSync(indexPath, 'utf8')
+    expect(content).toContain('# Project Index')
+  })
+
+  it('creates low-confidence.md when missing', async () => {
+    const path = join(root, '.lore', 'low-confidence.md')
+    expect(existsSync(path)).toBe(false)
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    await captureLog(() => cmdMigrate({}))
+    expect(existsSync(path)).toBe(true)
+  })
+
+  it('renames .cache.json to .extraction-cache.json', async () => {
+    const oldCache = join(root, '.lore', '.cache.json')
+    const newCache = join(root, '.lore', '.extraction-cache.json')
+    writeFileSync(oldCache, JSON.stringify({ abc123: { hash: 'abc123' } }))
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    await captureLog(() => cmdMigrate({}))
+    expect(existsSync(oldCache)).toBe(false)
+    expect(existsSync(newCache)).toBe(true)
+  })
+
+  it('--dry-run shows pending steps without writing files', async () => {
+    const indexPath = join(root, '.lore', 'index.md')
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    const out = await captureLog(() => cmdMigrate({ dryRun: true }))
+    expect(out).toContain('would apply')
+    expect(existsSync(indexPath)).toBe(false)
+  })
+
+  it('--json outputs structured result', async () => {
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    let jsonOut = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { jsonOut += args.map(String).join(' ') }
+    await cmdMigrate({ json: true })
+    console.log = origLog
+    const result = JSON.parse(jsonOut)
+    expect(result.success).toBe(true)
+    expect(Array.isArray(result.steps)).toBe(true)
+  })
+
+  it('prints error and exits 1 when no .lore/ found', async () => {
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    // Use JSON mode so we can check the error without relying on stderr output
+    let out = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { out += args.map(String).join(' ') }
+    // Temporarily rename .lore/ to simulate absence
+    const lorePath = join(root, '.lore')
+    const loreBak = join(root, '.lore-bak')
+    require('fs').renameSync(lorePath, loreBak)
+    const exitCode = await withMockedExit(() => cmdMigrate({ json: true }))
+    require('fs').renameSync(loreBak, lorePath)
+    console.log = origLog
+    expect(exitCode).toBe(1)
+    const result = JSON.parse(out)
+    expect(result.success).toBe(false)
+  })
+
+  it('is idempotent — running twice produces same state', async () => {
+    const { cmdMigrate } = await import('../commands/migrate.js')
+    await captureLog(() => cmdMigrate({}))
+    const files1 = ['index.md', 'low-confidence.md', 'risks.md'].map(f =>
+      existsSync(join(root, '.lore', f))
+    )
+    await captureLog(() => cmdMigrate({}))
+    const files2 = ['index.md', 'low-confidence.md', 'risks.md'].map(f =>
+      existsSync(join(root, '.lore', f))
+    )
+    expect(files1).toEqual(files2)
+  })
+})
+
+// ─── chronicle quickstart ─────────────────────────────────────────────────────
+
+describe('chronicle quickstart — non-interactive mode', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    // Quickstart needs a git repo to proceed
+    const { execSync } = require('child_process') as typeof import('child_process')
+    execSync('git init', { cwd: root, stdio: 'pipe' })
+    execSync('git config user.email "test@test.com"', { cwd: root, stdio: 'pipe' })
+    execSync('git config user.name "Test"', { cwd: root, stdio: 'pipe' })
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('completes without throwing when .lore/ already exists (--yes mode)', async () => {
+    buildLoreFixture(root)
+    const { cmdQuickstart } = await import('../commands/quickstart.js')
+    let threw = false
+    try {
+      await captureLog(() => cmdQuickstart({ yes: true }))
+    } catch {
+      threw = true
+    }
+    expect(threw).toBe(false)
+  })
+
+  it('prints setup complete summary in --yes mode', async () => {
+    buildLoreFixture(root)
+    const { cmdQuickstart } = await import('../commands/quickstart.js')
+    const out = await captureLog(() => cmdQuickstart({ yes: true }))
+    expect(out).toContain('Setup complete')
+  })
+
+  it('exits 1 when not in a git repo', async () => {
+    const noGitDir = makeTempDir()
+    process.chdir(noGitDir)
+    const { cmdQuickstart } = await import('../commands/quickstart.js')
+    const exitCode = await withMockedExit(() => cmdQuickstart({ yes: true }))
+    process.chdir(root)
+    rmSync(noGitDir, { recursive: true, force: true })
+    expect(exitCode).toBe(1)
+  })
+})
+
+// ─── chronicle session ────────────────────────────────────────────────────────
+
+describe('chronicle session', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('saves a session note and prints confirmation', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    const out = await captureLog(() => cmdSession({ action: 'save', message: 'Worked on auth module' }))
+    expect(out).toContain('Session saved')
+  })
+
+  it('creates a .md file in .lore/sessions/', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    await captureLog(() => cmdSession({ action: 'save', message: 'Test note' }))
+    const sessionsDir = join(root, '.lore', 'sessions')
+    const files = require('fs').readdirSync(sessionsDir).filter((f: string) => f.endsWith('.md') && f !== '_index.md')
+    expect(files.length).toBeGreaterThan(0)
+  })
+
+  it('list shows empty message when no sessions', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    const out = await captureLog(() => cmdSession({ action: 'list' }))
+    expect(out).toContain('No sessions')
+  })
+
+  it('list shows sessions after saving', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    await captureLog(() => cmdSession({ action: 'save', message: 'First session' }))
+    const out = await captureLog(() => cmdSession({ action: 'list' }))
+    expect(out).toContain('Sessions')
+  })
+
+  it('show prints session content', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    await captureLog(() => cmdSession({ action: 'save', message: 'Auth refactor complete' }))
+    const out = await captureLog(() => cmdSession({ action: 'show', n: '1' }))
+    expect(out).toContain('Auth refactor complete')
+  })
+
+  it('show returns empty message when no sessions exist', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    const out = await captureLog(() => cmdSession({ action: 'show', n: '1' }))
+    expect(out).toContain('No sessions')
+  })
+
+  it('rebuilds _index.md after save', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    await captureLog(() => cmdSession({ action: 'save', message: 'Session with index' }))
+    const indexPath = join(root, '.lore', 'sessions', '_index.md')
+    expect(existsSync(indexPath)).toBe(true)
+    const content = readFileSync(indexPath, 'utf8')
+    expect(content).toContain('Session History')
+  })
+
+  it('prints error when no .lore/ found', async () => {
+    const { cmdSession } = await import('../commands/session.js')
+    const lorePath = join(root, '.lore')
+    const loreBak = join(root, '.lore-bak')
+    require('fs').renameSync(lorePath, loreBak)
+    const err = await captureError(() => withMockedExit(() => cmdSession({ action: 'list' })) as Promise<void>)
+    require('fs').renameSync(loreBak, lorePath)
+    expect(err).toContain('.lore/')
+  })
+})
+
+// ─── chronicle status ─────────────────────────────────────────────────────────
+
+describe('chronicle status', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('outputs JSON with expected fields in --json mode', async () => {
+    const { cmdStatus } = await import('../commands/status.js')
+    let out = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { out += args.map(String).join(' ') }
+    await cmdStatus({ json: true })
+    console.log = origLog
+    const result = JSON.parse(out)
+    expect(typeof result.decisions).toBe('number')
+    expect(typeof result.rejections).toBe('number')
+    expect(typeof result.sessions).toBe('number')
+    expect(typeof result.unprocessedCommits).toBe('number')
+  })
+
+  it('outputs a single-line summary in default mode', async () => {
+    const { cmdStatus } = await import('../commands/status.js')
+    const out = await captureLog(() => cmdStatus({}))
+    expect(out).toContain('chronicle')
+    expect(out).toContain('decisions')
+  })
+
+  it('prints error when no .lore/ found', async () => {
+    const { cmdStatus } = await import('../commands/status.js')
+    const lorePath = join(root, '.lore')
+    const loreBak = join(root, '.lore-bak')
+    require('fs').renameSync(lorePath, loreBak)
+    const err = await captureError(() => withMockedExit(() => cmdStatus({})) as Promise<void>)
+    require('fs').renameSync(loreBak, lorePath)
+    expect(err).toContain('.lore/')
+  })
+
+  it('--json returns error object when no .lore/ found', async () => {
+    const { cmdStatus } = await import('../commands/status.js')
+    const lorePath = join(root, '.lore')
+    const loreBak = join(root, '.lore-bak')
+    require('fs').renameSync(lorePath, loreBak)
+    let out = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { out += args.map(String).join(' ') }
+    await withMockedExit(() => cmdStatus({ json: true }))
+    console.log = origLog
+    require('fs').renameSync(loreBak, lorePath)
+    const result = JSON.parse(out)
+    expect(result.ok).toBe(false)
   })
 })

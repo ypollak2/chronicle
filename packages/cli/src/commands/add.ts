@@ -18,13 +18,13 @@ import chalk from 'chalk'
 import { existsSync, mkdirSync } from 'fs'
 import { join, resolve, basename } from 'path'
 import { execSync } from 'child_process'
+import { findLoreRoot } from '@chronicle/core'
 import {
-  findLoreRoot,
   loadSourceRegistry, saveSourceRegistry,
   addSource, removeSource, listSources,
   deriveSourceId, markIngested,
   type SourceType,
-} from '@chronicle/core'
+} from '@chronicle/core/unstable'
 
 interface AddOpts {
   repo?: string

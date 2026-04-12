@@ -8,7 +8,8 @@
 import chalk from 'chalk'
 import ora from 'ora'
 import { join } from 'path'
-import { findLoreRoot, lorePath, loadSourceRegistry, saveSourceRegistry, markIngested, ingestDir, ingestUrl, ingestPdf } from '@chronicle/core'
+import { findLoreRoot, lorePath } from '@chronicle/core'
+import { loadSourceRegistry, saveSourceRegistry, markIngested, ingestDir, ingestUrl, ingestPdf } from '@chronicle/core/unstable'
 
 interface IngestOpts {
   id?: string      // ingest only this specific source

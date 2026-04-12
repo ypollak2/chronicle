@@ -60,7 +60,9 @@ export async function cmdEval(opts: { init?: boolean; json?: boolean; verbose?: 
   }
 
   const suite: EvalSuite = JSON.parse(readFileSync(evalPath, 'utf8'))
-  console.log(chalk.bold(`\n◆ Chronicle Eval — ${suite.cases.length} test cases\n`))
+  if (!opts.json) {
+    console.log(chalk.bold(`\n◆ Chronicle Eval — ${suite.cases.length} test cases\n`))
+  }
 
   const results = await runEvalSuite(root, suite, opts.verbose)
 
@@ -319,7 +321,7 @@ function initEvalSuite(root: string) {
   })
 
   const suite: EvalSuite = {
-    version: '0.7.0',
+    version: '1.0.0',
     generated: new Date().toISOString(),
     cases,
   }

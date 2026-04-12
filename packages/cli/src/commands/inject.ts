@@ -40,6 +40,9 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
     const fileList = opts.files?.split(',').map(f => f.trim()).filter(Boolean)
     let processed = minConf > 0 ? filterByConfidence(decisions, minConf) : decisions
 
+    // Filter deprecated/superseded decisions — excluded by default (they add noise, not signal)
+    processed = filterByLifecycle(processed)
+
     // Staleness detection — enabled by default, skip with --no-stale
     if (opts.stale !== false) {
       const modMap = buildFileModMap(root)
@@ -121,6 +124,17 @@ export async function cmdInject(opts: { files?: string; full?: boolean; format: 
   const finalSections = maxTokens > 0 ? trimToTokenBudget(sections, maxTokens) : sections
   const output = formatOutput(finalSections.join('\n\n---\n\n'), opts.format)
   process.stdout.write(output)
+}
+
+/** Remove deprecated and superseded rows — they add noise, not signal, to AI context */
+function filterByLifecycle(content: string): string {
+  return content
+    .split('\n')
+    .filter(line => {
+      if (!line.startsWith('|')) return true  // keep headers, blank lines, comments
+      return !line.includes('<!--status:deprecated') && !line.includes('<!--status:superseded')
+    })
+    .join('\n')
 }
 
 function filterByConfidence(content: string, minConf: number): string {

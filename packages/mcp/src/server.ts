@@ -6,7 +6,7 @@ import {
   findLoreRoot, readStore, appendToStore, writeDeepDecision, lorePath,
   type ExtractionResult
 } from '@chronicle/core'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'fs'
 import { join } from 'path'
 
 const server = new McpServer({
@@ -20,7 +20,7 @@ server.tool(
   'chronicle_get_context',
   'Get compressed project context: decisions, rejections, risks, last session',
   {
-    files: z.string().optional().describe('Comma-separated file paths to scope context to'),
+    files: z.string().max(2000).optional().describe('Comma-separated file paths to scope context to'),
     full: z.boolean().optional().describe('Include all deep ADR files'),
   },
   async ({ files, full }) => {
@@ -48,7 +48,6 @@ server.tool(
     if (full) {
       const deepDir = lorePath(root, 'decisions')
       if (existsSync(deepDir)) {
-        const { readdirSync } = await import('fs')
         for (const f of readdirSync(deepDir).filter(f => f.endsWith('.md'))) {
           sections.push(readFileSync(join(deepDir, f), 'utf8'))
         }
@@ -73,9 +72,9 @@ server.tool(
   'chronicle_log_decision',
   'Log an architectural decision made during this session',
   {
-    title: z.string().describe('Short title of the decision'),
-    rationale: z.string().describe('Why this decision was made'),
-    affects: z.array(z.string()).describe('File paths or module names affected'),
+    title: z.string().max(200).describe('Short title of the decision'),
+    rationale: z.string().max(4000).describe('Why this decision was made'),
+    affects: z.array(z.string().max(500)).max(50).describe('File paths or module names affected'),
     risk: z.enum(['low', 'medium', 'high']).describe('Reversibility risk'),
     isDeep: z.boolean().optional().describe('True if this warrants a full ADR document'),
   },
@@ -105,9 +104,9 @@ server.tool(
   'chronicle_log_rejection',
   'Log an approach that was tried and abandoned — prevents future AI from repeating the mistake',
   {
-    what: z.string().describe('What was tried'),
-    why: z.string().describe('Why it was abandoned'),
-    replacedBy: z.string().optional().describe('What replaced it'),
+    what: z.string().max(200).describe('What was tried'),
+    why: z.string().max(4000).describe('Why it was abandoned'),
+    replacedBy: z.string().max(200).optional().describe('What replaced it'),
   },
   async ({ what, why, replacedBy }) => {
     const root = findLoreRoot()
@@ -127,7 +126,7 @@ server.tool(
   'chronicle_get_risks',
   'Get risk information for files before modifying them',
   {
-    files: z.array(z.string()).describe('File paths to check'),
+    files: z.array(z.string().max(500)).max(100).describe('File paths to check'),
   },
   async ({ files }) => {
     const root = findLoreRoot()
@@ -156,15 +155,16 @@ server.tool(
   'chronicle_save_session',
   'Save a summary of the current session to .lore/sessions/',
   {
-    summary: z.string().describe('What was accomplished this session'),
-    pending: z.string().optional().describe('What is still in progress or left to do'),
-    decisions: z.array(z.string()).optional().describe('Key decisions made this session'),
+    summary: z.string().max(8000).describe('What was accomplished this session'),
+    pending: z.string().max(4000).optional().describe('What is still in progress or left to do'),
+    decisions: z.array(z.string().max(200)).max(100).optional().describe('Key decisions made this session'),
   },
   async ({ summary, pending, decisions }) => {
     const root = findLoreRoot()
     if (!root) return { content: [{ type: 'text', text: 'No .lore/ found' }] }
 
-    const date = new Date().toISOString().slice(0, 10)
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)  // 2026-04-12T14-30-00
+    const date = ts.slice(0, 10)
     const content = [
       `# Session ${date}`,
       `\n## What was done\n${summary}`,
@@ -172,12 +172,12 @@ server.tool(
       pending ? `\n## Pending\n${pending}` : '',
     ].filter(Boolean).join('\n')
 
-    const { mkdirSync } = await import('fs')
     const sessionsDir = lorePath(root, 'sessions')
     mkdirSync(sessionsDir, { recursive: true })
-    writeFileSync(join(sessionsDir, `${date}.md`), content)
+    const filename = `${ts}.md`
+    writeFileSync(join(sessionsDir, filename), content)
 
-    return { content: [{ type: 'text', text: `✓ Session saved to .lore/sessions/${date}.md` }] }
+    return { content: [{ type: 'text', text: `✓ Session saved to .lore/sessions/${filename}` }] }
   }
 )
 
@@ -190,8 +190,7 @@ function slugify(title: string): string {
 function getLastSession(root: string): string | null {
   const dir = lorePath(root, 'sessions')
   if (!existsSync(dir)) return null
-  const { readdirSync } = require('fs')
-  const files = readdirSync(dir).filter((f: string) => f.endsWith('.md')).sort().reverse()
+  const files = readdirSync(dir).filter((f) => f.endsWith('.md')).sort().reverse()
   return files[0] ? readFileSync(join(dir, files[0]), 'utf8') : null
 }
 

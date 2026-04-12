@@ -9,12 +9,9 @@ import { cmdGraph } from './commands/graph.js'
 import { cmdEvolution } from './commands/evolution.js'
 import { cmdDoctor } from './commands/doctor.js'
 import { cmdSearch } from './commands/search.js'
-import { cmdServe } from './commands/serve.js'
 import { cmdSession } from './commands/session.js'
 import { cmdMcp } from './commands/mcp.js'
 import { cmdEval } from './commands/eval.js'
-import { cmdAdd } from './commands/add.js'
-import { cmdIngest } from './commands/ingest.js'
 import { cmdMergeDriver } from './commands/merge-driver.js'
 import { cmdRelate } from './commands/relate.js'
 import { cmdContext } from './commands/context.js'
@@ -22,6 +19,9 @@ import { cmdWho } from './commands/who.js'
 import { cmdVerify } from './commands/verify.js'
 import { cmdProcess } from './commands/process.js'
 import { cmdStatus } from './commands/status.js'
+import { cmdMigrate } from './commands/migrate.js'
+import { cmdQuickstart } from './commands/quickstart.js'
+import { cmdDecision } from './commands/decision.js'
 import { findLoreRoot } from '@chronicle/core'
 import { getStoreStats, printStatusBefore, printStatusAfter } from './status.js'
 
@@ -30,7 +30,13 @@ const program = new Command()
 program
   .name('chronicle')
   .description('AI-native development memory — markdown RAG for every AI coding tool')
-  .version('0.9.0')
+  .version('1.0.0')
+  .option('--debug', 'enable verbose debug output to stderr (or set CHRONICLE_DEBUG=1)')
+  .hook('preAction', (thisCommand) => {
+    if ((thisCommand.opts() as { debug?: boolean }).debug) {
+      process.env.CHRONICLE_DEBUG = '1'
+    }
+  })
 
 program
   .command('init')
@@ -79,12 +85,6 @@ program
   .action(cmdSearch)
 
 program
-  .command('serve')
-  .description('Start a local web viewer for .lore/')
-  .option('--port <n>', 'port to listen on', '4242')
-  .action(cmdServe)
-
-program
   .command('setup')
   .description('Install integration for a specific AI tool')
   .option('--tool <tool>', 'tool name: claude-code|cursor|aider|gemini-cli|copilot|codex|opencode|trae|factory|openclaw')
@@ -117,25 +117,7 @@ const session = program.command('session').description('Manage session notes in 
 session.command('save [message]').description('Save a session note with optional message').action((msg) => cmdSession({ action: 'save', message: msg }))
 session.command('list').description('List saved session notes').action(() => cmdSession({ action: 'list' }))
 session.command('show [n]').description('Show last N session notes (default: 1)').action((n) => cmdSession({ action: 'show', n }))
-
-program
-  .command('add')
-  .description('Register a knowledge source (repo, directory, URL, or PDF)')
-  .option('--repo <path>', 'git repository path or remote URL')
-  .option('--dir <path>', 'local directory to index')
-  .option('--url <url>', 'web page to index')
-  .option('--pdf <path>', 'PDF file to index')
-  .option('--label <name>', 'human-readable name for this source')
-  .option('--list', 'list all registered sources')
-  .option('--remove <id>', 'unregister a source by ID')
-  .action(cmdAdd)
-
-program
-  .command('ingest')
-  .description('Index registered non-git sources (dirs, URLs, PDFs)')
-  .option('--id <id>', 'ingest only this source')
-  .option('--force', 're-ingest even if already indexed')
-  .action(cmdIngest)
+session.command('archive').description('Move old sessions to archive/ (keeps last 30 active)').option('--keep <n>', 'number of sessions to keep active', '30').action((opts) => cmdSession({ action: 'archive', keep: opts.keep }))
 
 program
   .command('eval')
@@ -210,6 +192,27 @@ program
   .option('--dry-run', 'show what would be processed without making changes')
   .option('--min-confidence <n>', 'min confidence for decisions.md (0.0–1.0, default: 0.5); lower results go to low-confidence.md')
   .action(cmdProcess)
+
+program
+  .command('migrate')
+  .description('Upgrade .lore/ schema to the current version (safe to run multiple times)')
+  .option('--dry-run', 'show what would be migrated without making changes')
+  .option('--json', 'output results as JSON')
+  .action(cmdMigrate)
+
+program
+  .command('quickstart')
+  .description('Interactive 5-minute setup wizard: init → migrate → hooks → AI tool')
+  .option('--yes', 'non-interactive mode — accept all defaults')
+  .option('--llm <provider>', 'LLM provider for init step', 'auto')
+  .option('--depth <depth>', 'scan depth for init step', '3months')
+  .action(cmdQuickstart)
+
+program
+  .command('decision <subcommand> [title]')
+  .description('Manage decision lifecycle: deprecate, supersede, promote, list')
+  .option('--by <replacement>', 'for supersede: the decision that replaced it')
+  .action((subcommand, title, opts) => cmdDecision({ subcommand, title, by: opts.by }))
 
 // Internal commands (called by hooks/git, not for direct use)
 program

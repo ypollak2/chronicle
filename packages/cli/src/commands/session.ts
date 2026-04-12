@@ -1,14 +1,17 @@
 import chalk from 'chalk'
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, renameSync } from 'fs'
 import { join } from 'path'
 import { findLoreRoot, lorePath } from '@chronicle/core'
 
 const INDEX_FILE = '_index.md'
+const ARCHIVE_DIR = 'archive'
+const MAX_ACTIVE_SESSIONS = 30  // older sessions are moved to archive/ automatically
 
 interface SessionOpts {
-  action: 'save' | 'list' | 'show'
+  action: 'save' | 'list' | 'show' | 'archive'
   message?: string
   n?: string
+  keep?: string
 }
 
 export async function cmdSession(opts: SessionOpts) {
@@ -25,6 +28,7 @@ export async function cmdSession(opts: SessionOpts) {
     case 'save': return saveSession(sessionsDir, opts.message)
     case 'list': return listSessions(sessionsDir)
     case 'show': return showSessions(sessionsDir, opts.n ? parseInt(opts.n, 10) : 1)
+    case 'archive': return archiveSessions(sessionsDir, opts.keep ? parseInt(opts.keep, 10) : MAX_ACTIVE_SESSIONS)
   }
 }
 
@@ -71,6 +75,27 @@ export function rebuildIndex(dir: string): void {
 
   const index = `# Session History\n\n| Date | Summary |\n|------|----------|\n${rows.join('\n')}\n`
   writeFileSync(join(dir, INDEX_FILE), index)
+
+  // Auto-archive sessions beyond the active window (preserves _index.md as full record)
+  autoArchive(dir, MAX_ACTIVE_SESSIONS)
+}
+
+/**
+ * Move sessions beyond the active window to archive/.
+ * _index.md is NOT modified — it remains the permanent compact record.
+ */
+function autoArchive(dir: string, keep: number): void {
+  const files = getSessions(dir)  // newest first
+  const toArchive = files.slice(keep)  // everything beyond the last `keep` sessions
+  if (toArchive.length === 0) return
+
+  const archiveDir = join(dir, ARCHIVE_DIR)
+  mkdirSync(archiveDir, { recursive: true })
+  for (const f of toArchive) {
+    try {
+      renameSync(join(dir, f), join(archiveDir, f))
+    } catch { /* best-effort — file may have been moved already */ }
+  }
 }
 
 function listSessions(dir: string) {
@@ -103,11 +128,35 @@ function showSessions(dir: string, n: number) {
   }
 }
 
-/** Returns raw session files (excludes _index.md), newest first. */
+/** Returns raw session files (excludes _index.md and archive/), newest first. */
 function getSessions(dir: string): string[] {
   if (!existsSync(dir)) return []
   return readdirSync(dir)
     .filter(f => f.endsWith('.md') && f !== INDEX_FILE)
     .sort()
     .reverse()
+}
+
+function archiveSessions(dir: string, keep: number) {
+  const files = getSessions(dir)
+  const toArchive = files.slice(keep)
+  if (toArchive.length === 0) {
+    console.log(chalk.dim(`  Nothing to archive (${files.length}/${keep} sessions in active window)`))
+    return
+  }
+
+  const archiveDir = join(dir, ARCHIVE_DIR)
+  mkdirSync(archiveDir, { recursive: true })
+
+  let moved = 0
+  for (const f of toArchive) {
+    try {
+      renameSync(join(dir, f), join(archiveDir, f))
+      moved++
+    } catch { /* skip */ }
+  }
+
+  console.log(chalk.green(`✓  Archived ${moved} session(s) to .lore/sessions/archive/`))
+  console.log(chalk.dim(`  Active: ${files.length - moved} sessions · Archive: ${moved + toArchive.length - moved} total`))
+  console.log(chalk.dim('  _index.md is unchanged — full history always available'))
 }

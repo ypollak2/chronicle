@@ -1,5 +1,54 @@
 import { execSync, spawnSync } from 'child_process'
 import type { LLMProvider } from '@chronicle/core'
+import { debug } from './debug.js'
+
+// ── HTTP retry with exponential backoff ──────────────────────────────────────
+// Retries on 429 (rate limit) and 5xx (server errors). Respects Retry-After header.
+// Network failures (fetch throws) are also retried with the same policy.
+
+const MAX_RETRIES = 3
+const BASE_DELAY_MS = 1_000
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = MAX_RETRIES
+): Promise<Response> {
+  const host = new URL(url).hostname
+  let lastError: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      const delay = BASE_DELAY_MS * 2 ** (attempt - 1)  // 1s, 2s, 4s
+      debug('llm', `retry attempt ${attempt}/${retries} for ${host} (delay ${delay}ms)`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+    let res: Response
+    try {
+      debug('llm', `fetch ${host} attempt ${attempt + 1}`)
+      res = await fetch(url, init)
+    } catch (err) {
+      // Network-level failure (DNS, connection refused, etc.)
+      debug('llm', `network error on ${host}`, String(err))
+      lastError = err
+      continue
+    }
+    debug('llm', `response from ${host}: ${res.status}`)
+    if (res.ok) return res
+    // Don't retry on client errors (except 429)
+    if (res.status !== 429 && res.status < 500) return res
+
+    // Honour Retry-After header if present
+    const retryAfter = res.headers.get('Retry-After')
+    if (retryAfter && attempt < retries) {
+      const wait = Number(retryAfter) * 1000 || BASE_DELAY_MS * 2 ** attempt
+      debug('llm', `rate-limited by ${host}, waiting ${wait}ms (Retry-After: ${retryAfter})`)
+      await new Promise(r => setTimeout(r, wait))
+    }
+    lastError = res
+  }
+  if (lastError instanceof Response) return lastError
+  throw lastError
+}
 
 // Auto-detect best available provider if none specified
 export function detectProvider(): string {
@@ -37,7 +86,7 @@ function makeAnthropicProvider(): LLMProvider {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -62,7 +111,7 @@ function makeOpenAIProvider(): LLMProvider {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) throw new Error('OPENAI_API_KEY not set')
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -83,7 +132,7 @@ function makeOllamaProvider(): LLMProvider {
     const model = process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b'
     const host  = process.env.OLLAMA_HOST  ?? 'http://localhost:11434'
 
-    const res = await fetch(`${host}/api/chat`, {
+    const res = await fetchWithRetry(`${host}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -143,7 +192,7 @@ function makeGeminiProvider(): LLMProvider {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
