@@ -1,7 +1,6 @@
 import { execSync } from 'child_process'
 import { readStore, writeStore, lorePath } from './store.js'
 import { readFileSync, existsSync } from 'fs'
-import { join } from 'path'
 
 export interface Era {
   tag: string            // git tag name (or 'HEAD' for current)
@@ -46,8 +45,9 @@ export function buildEvolution(root: string): Era[] {
     const fromDate = previous?.date ?? getFirstCommitDate(root)
     const toDate   = current.name === 'HEAD (current)' ? 'present' : current.date
 
-    const decisions = getDecisionsInRange(root, fromDate, toDate)
-    const rejections = getRejectionsInRange(root, fromDate, toDate)
+    const isFirst = i === 0
+    const decisions = getDecisionsInRange(root, fromDate, toDate, isFirst)
+    const rejections = getRejectionsInRange(root, fromDate, toDate, isFirst)
     const keyFiles = getKeyFilesInRange(root, previous?.hash ?? '', current.hash)
 
     eras.push({
@@ -87,8 +87,11 @@ export function renderEvolutionMarkdown(eras: Era[], projectName = 'Project'): s
     }
 
     if (era.decisions.length) {
-      lines.push(`**Decisions (${era.decisions.length}):**`)
-      for (const d of era.decisions) {
+      // Sort high-risk decisions first so the most impactful changes lead
+      const riskPriority = { high: 0, medium: 1, low: 2 }
+      const sortedDecisions = [...era.decisions].sort((a, b) => riskPriority[a.risk] - riskPriority[b.risk])
+      lines.push(`**Decisions (${sortedDecisions.length}):**`)
+      for (const d of sortedDecisions) {
         const riskMark = d.risk === 'high' ? ' ⚠' : d.risk === 'medium' ? ' ~' : ''
         const deepMark = d.isDeep ? ' [ADR]' : ''
         lines.push(`- ${d.title}${riskMark}${deepMark}`)
@@ -102,7 +105,8 @@ export function renderEvolutionMarkdown(eras: Era[], projectName = 'Project'): s
       lines.push('')
     }
 
-    if (era.keyFiles.length) {
+    // Only show key files when there are no decisions — file churn without decisions is noise
+    if (era.keyFiles.length && era.decisions.length === 0) {
       lines.push(`**Most changed files:**`)
       for (const f of era.keyFiles.slice(0, 5)) lines.push(`- \`${f}\``)
       lines.push('')
@@ -211,31 +215,75 @@ function isHeadAheadOfTag(root: string, tagName: string): boolean {
   } catch { return false }
 }
 
-// Parse decisions.md to find entries between two dates
-function getDecisionsInRange(root: string, fromDate: string, toDate: string): EraDecision[] {
-  const decisionsDir = join(lorePath(root), 'decisions')
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Parse decisions.md to find entries within a date range.
+// Handles both old format (no date column) and new format (date in first column).
+//
+// isFirst: true for the genesis era — uses inclusive lower bound (date >= from).
+// Subsequent eras use exclusive lower bound (date > from) so a decision that shares
+// its date with an era boundary only ever appears in the FIRST era of that date,
+// not in every era that spans that same day.
+function getDecisionsInRange(root: string, fromDate: string, toDate: string, isFirst = false): EraDecision[] {
   const index = readStore(root, 'decisions')
-  const rows = index.split('\n').filter(l => l.startsWith('|') && !l.includes('---') && !l.includes('Decision'))
+  // Exclude separator rows and the header row (first cell is 'Date' or 'Decision')
+  const rows = index.split('\n').filter(l => {
+    if (!l.startsWith('|') || l.includes('---')) return false
+    const firstCell = l.split('|')[1]?.trim() ?? ''
+    return firstCell !== 'Date' && firstCell !== 'Decision'
+  })
+
+  const from = fromDate.slice(0, 10)
+  const to = toDate === 'present' ? '9999-99-99' : toDate.slice(0, 10)
 
   return rows.map(row => {
     const cols = row.split('|').map(c => c.trim()).filter(Boolean)
-    return {
-      title: cols[0] ?? '',
-      risk: (cols[2] ?? 'low') as EraDecision['risk'],
-      isDeep: row.includes('[→]') || row.includes('[→]('),
+    if (cols.length < 2) return null
+
+    // Detect format: new format has a date in col[0], old format has title in col[0]
+    const hasDate = DATE_RE.test(cols[0])
+    const date = hasDate ? cols[0] : ''
+    const rawTitle = hasDate ? (cols[1] ?? '') : (cols[0] ?? '')
+    const title = rawTitle.replace(/<!--.*?-->/g, '').replace(/\[→\]\([^)]+\)/g, '').trim()
+    const risk = ((hasDate ? cols[3] : cols[2]) ?? 'low') as EraDecision['risk']
+
+    if (date) {
+      // Genesis era: inclusive lower bound — decisions ON the start date belong here.
+      // Later eras: exclusive lower bound — date must be strictly AFTER fromDate so
+      // decisions with the same date as a tag boundary don't flood every subsequent era.
+      const afterFrom = isFirst ? date >= from : date > from
+      if (!afterFrom || (to !== '9999-99-99' && date > to)) return null
     }
-  }).filter(d => d.title)
-  // Note: date-range filtering would require storing dates in decisions.md rows
-  // For v1, return all decisions (era grouping comes from tags in practice)
+
+    return title ? { title, risk, isDeep: row.includes('[→]') } : null
+  }).filter((d): d is EraDecision => d !== null)
 }
 
-// Parse rejected.md to extract rejection titles
-function getRejectionsInRange(root: string, fromDate: string, toDate: string): string[] {
+// Parse rejected.md to extract rejection titles within a date range.
+// Entries have the form: `## Title — rejected (YYYY-MM-DD)`
+function getRejectionsInRange(root: string, fromDate: string, toDate: string, isFirst = false): string[] {
   const content = readStore(root, 'rejected')
-  const titleRe = /^## (.+?) — rejected/gm
+  const entryRe = /^## (.+?) — rejected \((\d{4}-\d{2}-\d{2})\)/gm
+  const noDateRe = /^## (.+?) — rejected$/gm
+
+  const from = fromDate.slice(0, 10)
+  const to = toDate === 'present' ? '9999-99-99' : toDate.slice(0, 10)
+
   const titles: string[] = []
   let m
-  while ((m = titleRe.exec(content)) !== null) titles.push(m[1])
+
+  // Entries with dates: apply same exclusive-lower-bound logic as decisions
+  while ((m = entryRe.exec(content)) !== null) {
+    const [, title, date] = m
+    const afterFrom = isFirst ? date >= from : date > from
+    if (afterFrom && (to === '9999-99-99' || date <= to)) titles.push(title)
+  }
+
+  // Entries without dates (legacy format): include only in the genesis era
+  if (isFirst) {
+    while ((m = noDateRe.exec(content)) !== null) titles.push(m[1])
+  }
+
   return titles
 }
 

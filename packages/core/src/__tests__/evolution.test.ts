@@ -106,7 +106,8 @@ describe('renderEvolutionMarkdown', () => {
     expect(md).toContain('## Era: Genesis → v0.1.0')
     expect(md).toContain('Use JWT')
     expect(md).toContain('Prisma')
-    expect(md).toContain('auth.ts')
+    // keyFiles are suppressed when decisions exist (decisions tell a richer story)
+    expect(md).not.toContain('auth.ts')
   })
 
   it('marks high-risk decisions with ⚠', () => {
@@ -140,5 +141,120 @@ describe('mergeWithExisting', () => {
     const existing = `# Evolution\n\n## Era: Genesis → v0.1.0\n\nNo summaries`
     const newMd = `# Evolution\n\n## Era: Genesis → v0.1.0\n\nNew content`
     expect(mergeWithExisting(newMd, existing)).toBe(newMd)
+  })
+})
+
+describe('renderEvolutionMarkdown — risk ordering + keyFiles suppression', () => {
+  it('renders high-risk decisions before low-risk ones', () => {
+    const eras = [{
+      tag: 'v1.0.0', fromTag: '', fromDate: '2025-01-01', toDate: '2025-06-01',
+      decisions: [
+        { title: 'Low risk change', risk: 'low' as const, isDeep: false },
+        { title: 'High risk change', risk: 'high' as const, isDeep: false },
+        { title: 'Medium risk change', risk: 'medium' as const, isDeep: false },
+      ],
+      rejections: [],
+      keyFiles: ['src/index.ts'],
+    }]
+    const md = renderEvolutionMarkdown(eras)
+    const highIdx = md.indexOf('High risk change')
+    const medIdx = md.indexOf('Medium risk change')
+    const lowIdx = md.indexOf('Low risk change')
+    expect(highIdx).toBeLessThan(medIdx)
+    expect(medIdx).toBeLessThan(lowIdx)
+  })
+
+  it('hides keyFiles section when decisions exist', () => {
+    const eras = [{
+      tag: 'v1.0.0', fromTag: '', fromDate: '2025-01-01', toDate: '2025-06-01',
+      decisions: [{ title: 'Some decision', risk: 'low' as const, isDeep: false }],
+      rejections: [],
+      keyFiles: ['src/important.ts'],
+    }]
+    const md = renderEvolutionMarkdown(eras)
+    expect(md).not.toContain('Most changed files')
+    expect(md).not.toContain('src/important.ts')
+  })
+
+  it('shows keyFiles section when no decisions exist', () => {
+    const eras = [{
+      tag: 'v1.0.0', fromTag: '', fromDate: '2025-01-01', toDate: '2025-06-01',
+      decisions: [],
+      rejections: [],
+      keyFiles: ['src/important.ts'],
+    }]
+    const md = renderEvolutionMarkdown(eras)
+    expect(md).toContain('Most changed files')
+    expect(md).toContain('src/important.ts')
+  })
+})
+
+describe('buildEvolution — date-range filtering', () => {
+  it('filters decisions by date range when dates are present in decisions.md', () => {
+    const dir = join(os.tmpdir(), `chronicle-date-filter-${Date.now()}`)
+    mkdirSync(dir)
+    execSync('git init', { cwd: dir })
+    execSync('git config user.email "t@t.com" && git config user.name "T"', { cwd: dir })
+    writeFileSync(join(dir, 'x.ts'), 'x')
+    execSync('git add . && git commit -m "init"', { cwd: dir })
+    execSync('git tag v0.1.0', { cwd: dir })
+    writeFileSync(join(dir, 'y.ts'), 'y')
+    execSync('git add . && git commit -m "add y"', { cwd: dir })
+    execSync('git tag v0.2.0', { cwd: dir })
+    initStore(dir)
+    // Write decisions with dates — second decision is well after any tag date
+    writeStore(dir, 'decisions',
+      '# Decision Log\n\n| Date | Decision | Affects | Risk | ADR |\n|------|----------|---------|------|-----|\n' +
+      '| 2020-01-01 | Very old decision | src/ | low | |\n' +
+      '| 2099-01-01 | Far future decision | src/ | high | |\n'
+    )
+    const eras = buildEvolution(dir)
+    const allDecisions = eras.flatMap(e => e.decisions)
+    // Not all decisions should be in all eras — at least one era should exclude some
+    expect(eras.length).toBeGreaterThan(0)
+    // Very old decision should not be in the future era (HEAD era)
+    const headEra = eras.find(e => e.tag.includes('HEAD'))
+    if (headEra) {
+      expect(headEra.decisions.some(d => d.title.includes('Very old'))).toBe(false)
+    }
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('does not repeat same-date decisions across multiple same-day eras', () => {
+    // Regression test for: all 16 eras showing identical decisions when all tags
+    // were created on the same calendar day.
+    const dir = join(os.tmpdir(), `chronicle-same-day-${Date.now()}`)
+    mkdirSync(dir)
+    execSync('git init', { cwd: dir })
+    execSync('git config user.email "t@t.com" && git config user.name "T"', { cwd: dir })
+    writeFileSync(join(dir, 'a.ts'), 'a')
+    execSync('git add . && git commit -m "init"', { cwd: dir })
+    execSync('git tag v0.1.0', { cwd: dir })
+    execSync('git tag v0.2.0', { cwd: dir })
+    execSync('git tag v0.3.0', { cwd: dir })
+
+    // All three tags on same day — write decisions with today's date
+    const today = new Date().toISOString().slice(0, 10)
+    initStore(dir)
+    writeStore(dir, 'decisions',
+      '# Decision Log\n\n| Date | Decision | Affects | Risk | ADR |\n|------|----------|---------|------|-----|\n' +
+      `| ${today} | Decision A | src/ | low | |\n` +
+      `| ${today} | Decision B | lib/ | high | |\n`
+    )
+
+    const eras = buildEvolution(dir)
+    expect(eras.length).toBeGreaterThanOrEqual(3)
+
+    // Each decision should appear in exactly one era total (no duplicates)
+    const allTitles = eras.flatMap(e => e.decisions.map(d => d.title))
+    expect(allTitles.filter(t => t === 'Decision A')).toHaveLength(1)
+    expect(allTitles.filter(t => t === 'Decision B')).toHaveLength(1)
+
+    // The genesis era (first) should contain the decisions; later same-day eras should not
+    expect(eras[0].decisions.map(d => d.title)).toContain('Decision A')
+    expect(eras[1].decisions.map(d => d.title)).not.toContain('Decision A')
+    expect(eras[2].decisions.map(d => d.title)).not.toContain('Decision A')
+
+    rmSync(dir, { recursive: true, force: true })
   })
 })
