@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { parseExtractionResponse, buildExtractionPrompt } from '../extractor.js'
+import { parseExtractionResponse, buildExtractionPrompt, callWithRetry } from '../extractor.js'
 
 // ─── Malformed JSON ────────────────────────────────────────────────────────────
 
@@ -203,5 +203,71 @@ describe('buildExtractionPrompt — completeness', () => {
   it('includes confidence field instruction', () => {
     const prompt = buildExtractionPrompt([stubCommit])
     expect(prompt.toLowerCase()).toContain('confidence')
+  })
+
+  it('includes truncation note when opts.truncated is true', () => {
+    const prompt = buildExtractionPrompt([stubCommit], { truncated: true })
+    expect(prompt.toLowerCase()).toContain('truncated')
+  })
+
+  it('omits truncation note when opts.truncated is false', () => {
+    const prompt = buildExtractionPrompt([stubCommit], { truncated: false })
+    expect(prompt).not.toContain('NOTE:')
+  })
+})
+
+// ─── callWithRetry — exhaustion ctx ──────────────────────────────────────────
+
+describe('callWithRetry', () => {
+  const validResult = JSON.stringify([{
+    isDecision: true, isRejection: false, title: 'Use Redis', affects: ['cache/'],
+    risk: 'medium', confidence: 0.9, rationale: 'durability', isDeep: false,
+  }])
+
+  it('returns parsed results on first success', async () => {
+    const llm = async () => validResult
+    const results = await callWithRetry('prompt', llm)
+    expect(results).toHaveLength(1)
+    expect(results[0].title).toBe('Use Redis')
+  })
+
+  it('returns [] for legitimate empty response (no decisions)', async () => {
+    const llm = async () => '[]'
+    const results = await callWithRetry('prompt', llm)
+    expect(results).toEqual([])
+  })
+
+  it('retries on malformed JSON and succeeds on second attempt', async () => {
+    let attempt = 0
+    const llm = async () => {
+      attempt++
+      return attempt === 1 ? 'not json at all' : validResult
+    }
+    const results = await callWithRetry('prompt', llm, 3)
+    expect(results).toHaveLength(1)
+    expect(attempt).toBe(2)
+  })
+
+  it('increments ctx.errors when all retries are exhausted with malformed JSON', async () => {
+    const llm = async () => 'always bad json {'
+    const ctx = { errors: 0 }
+    const results = await callWithRetry('prompt', llm, 2, ctx)
+    expect(results).toEqual([])
+    expect(ctx.errors).toBe(1)
+  })
+
+  it('does NOT increment ctx.errors for a legitimate empty response', async () => {
+    const llm = async () => '[]'
+    const ctx = { errors: 0 }
+    await callWithRetry('prompt', llm, 3, ctx)
+    expect(ctx.errors).toBe(0)
+  })
+
+  it('accumulates errors across multiple exhausted batches', async () => {
+    const llm = async () => 'bad {'
+    const ctx = { errors: 0 }
+    await callWithRetry('prompt1', llm, 1, ctx)
+    await callWithRetry('prompt2', llm, 1, ctx)
+    expect(ctx.errors).toBe(2)
   })
 })

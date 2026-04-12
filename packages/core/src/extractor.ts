@@ -76,25 +76,23 @@ Return a JSON array with one object per commit, in the same order as the commits
 Return only valid JSON. No markdown fences, no explanation outside the array.`
 }
 
-export type ExtractionStrategy = 'simple' | 'clustered' | 'two-pass'
+export type ExtractionStrategy = 'simple' | 'clustered'
 
 // Entry point — strategy is swappable without changing callers
 // v1: simple fixed batching (cached by SHA, good enough for bootstrap)
 // v2: semantic clustering by file overlap (ships in v0.4.0)
-// v3: two-pass cheap filter + quality model for complex decisions (planned)
 export async function extractFromCommits(
   commits: CommitMeta[],
   llm: LLMProvider,
-  options: { strategy?: ExtractionStrategy; cache?: ExtractionCache; concurrency?: number } = {}
+  options: { strategy?: ExtractionStrategy; cache?: ExtractionCache; concurrency?: number; ctx?: { errors: number } } = {}
 ): Promise<ExtractionResult[]> {
-  const { strategy = 'simple', cache, concurrency = 4 } = options
+  const { strategy = 'simple', cache, concurrency = 4, ctx } = options
   const uncached = cache ? commits.filter(c => !cache.has(c.hash)) : commits
 
   let results: ExtractionResult[]
   switch (strategy) {
-    case 'simple':    results = await strategySimple(uncached, llm, concurrency); break
-    case 'clustered': results = await strategyClustered(uncached, llm, concurrency); break
-    case 'two-pass':  throw new Error('two-pass strategy not yet implemented (v3 roadmap)')
+    case 'simple':    results = await strategySimple(uncached, llm, concurrency, ctx); break
+    case 'clustered': results = await strategyClustered(uncached, llm, concurrency, ctx); break
   }
 
   // Enrich results: populate date from CommitMeta and default missing confidence
@@ -238,18 +236,18 @@ function prepareBatch(commits: CommitMeta[]): { batch: CommitMeta[]; truncated: 
   return { batch, truncated }
 }
 
-async function strategyClustered(commits: CommitMeta[], llm: LLMProvider, concurrency: number): Promise<ExtractionResult[]> {
+async function strategyClustered(commits: CommitMeta[], llm: LLMProvider, concurrency: number, ctx?: { errors: number }): Promise<ExtractionResult[]> {
   const clusters = clusterCommitsByFileOverlap(commits)
   const tasks = clusters.map(cluster => () => {
     const { batch, truncated } = prepareBatch(cluster)
-    return callWithRetry(buildExtractionPrompt(batch, { truncated }), llm)
+    return callWithRetry(buildExtractionPrompt(batch, { truncated }), llm, 3, ctx)
   })
   const batchResults = await runConcurrent(tasks, concurrency)
   return batchResults.flat()
 }
 
 // v1: fixed batches of 6 commits, capped at 5000 chars of diff per batch
-async function strategySimple(commits: CommitMeta[], llm: LLMProvider, concurrency: number): Promise<ExtractionResult[]> {
+async function strategySimple(commits: CommitMeta[], llm: LLMProvider, concurrency: number, ctx?: { errors: number }): Promise<ExtractionResult[]> {
   const BATCH_SIZE = 6
   const MAX_BATCH_CHARS = 5000
   const batches: CommitMeta[][] = []
@@ -271,7 +269,7 @@ async function strategySimple(commits: CommitMeta[], llm: LLMProvider, concurren
 
   const tasks = batches.map(b => () => {
     const { batch: prepared, truncated } = prepareBatch(b)
-    return callWithRetry(buildExtractionPrompt(prepared, { truncated }), llm)
+    return callWithRetry(buildExtractionPrompt(prepared, { truncated }), llm, 3, ctx)
   })
   const batchResults = await runConcurrent(tasks, concurrency)
   return batchResults.flat()
@@ -308,11 +306,14 @@ export function parseExtractionResponse(raw: string): ExtractionResult[] {
 }
 
 // Wraps an LLM call with up to maxAttempts retries on malformed JSON.
-// Uses exponential backoff: 1s, 2s, 4s between attempts.
+// Uses exponential backoff: 1s, 2s between attempts.
+// When all retries are exhausted due to malformed JSON (not a legitimate empty result),
+// increments ctx.errors so callers can distinguish "no decisions" from "LLM failure".
 export async function callWithRetry(
   prompt: string,
   llm: LLMProvider,
   maxAttempts = 3,
+  ctx?: { errors: number },
 ): Promise<ExtractionResult[]> {
   let lastRaw = ''
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -325,6 +326,7 @@ export async function callWithRetry(
       await new Promise(res => setTimeout(res, 1000 * 2 ** (attempt - 1)))
     }
   }
-  // All attempts failed — return empty rather than crashing
+  // All attempts failed with malformed JSON — signal distinctly from empty results
+  if (ctx) ctx.errors++
   return []
 }

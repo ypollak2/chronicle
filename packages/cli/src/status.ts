@@ -3,7 +3,7 @@
  * Gives users a persistent sense of what Chronicle knows and when it last updated.
  */
 import { readStore, findLoreRoot, listSessions, lorePath } from '@chronicle/core'
-import { existsSync, statSync, readdirSync } from 'fs'
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import chalk from 'chalk'
 
@@ -17,6 +17,8 @@ export interface StoreStats {
   lastCapture: string | null
   hasEvolution: boolean
   hasDiagrams: boolean
+  lowConfidence: number
+  extractionErrors: number
 }
 
 export function getStoreStats(root: string): StoreStats {
@@ -28,8 +30,10 @@ export function getStoreStats(root: string): StoreStats {
   const hasEvolution = existsSync(lorePath(root, 'evolution.md')) &&
     readStore(root, 'evolution').length > 100
   const hasDiagrams = countFiles(lorePath(root, 'diagrams'), '.txt') > 0
+  const lowConfidence = countTableRows(readStore(root, 'low-confidence'))
+  const extractionErrors = getLastProcessErrors(root)
 
-  return { decisions, rejections, deepADRs, sessions, lastCapture, hasEvolution, hasDiagrams }
+  return { decisions, rejections, deepADRs, sessions, lastCapture, hasEvolution, hasDiagrams, lowConfidence, extractionErrors }
 }
 
 // Print a compact one-line status before a command runs
@@ -77,6 +81,18 @@ export function printStatusAfter(root: string, beforeStats: StoreStats): void {
 
 function countTableRows(content: string): number {
   return content.split('\n').filter(l => l.startsWith('|') && !l.includes('---') && !l.includes('Decision') && !l.includes('Affects')).length
+}
+
+function getLastProcessErrors(root: string): number {
+  const logPath = lorePath(root, 'process.log')
+  if (!existsSync(logPath)) return 0
+  try {
+    const lines = readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean)
+    const last = lines[lines.length - 1]
+    if (!last) return 0
+    const m = last.match(/errors:(\d+)/)
+    return m ? parseInt(m[1], 10) : 0
+  } catch { return 0 }
 }
 
 function countHeadings(content: string): number {

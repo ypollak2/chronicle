@@ -20,11 +20,12 @@ export interface Rejection {
 export const LORE_DIR = '.lore'
 
 export const STORE_FILES = {
-  index:     'index.md',
-  decisions: 'decisions.md',
-  rejected:  'rejected.md',
-  risks:     'risks.md',
-  evolution: 'evolution.md',
+  index:           'index.md',
+  decisions:       'decisions.md',
+  rejected:        'rejected.md',
+  risks:           'risks.md',
+  evolution:       'evolution.md',
+  'low-confidence': 'low-confidence.md',
 } as const
 
 // Resolve the .lore/ directory from any subdirectory upward (like git)

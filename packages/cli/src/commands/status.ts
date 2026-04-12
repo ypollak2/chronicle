@@ -42,6 +42,8 @@ export async function cmdStatus(opts: { json?: boolean }): Promise<void> {
       unprocessedCommits: unprocessed,
       lastCapture: stats.lastCapture,
       hasEvolution: stats.hasEvolution,
+      lowConfidence: stats.lowConfidence,
+      extractionErrors: stats.extractionErrors,
     }, null, 2))
     return
   }
@@ -64,6 +66,12 @@ export async function cmdStatus(opts: { json?: boolean }): Promise<void> {
     chalk.dim('│'),
     `${freshnessIcon} ${lagLabel}`,
   ]
+  if (stats.lowConfidence > 0) {
+    parts.push(chalk.dim('·'), chalk.dim(`${stats.lowConfidence} low-confidence`))
+  }
+  if (stats.extractionErrors > 0) {
+    parts.push(chalk.dim('·'), chalk.red(`⚠ ${stats.extractionErrors} extraction errors`))
+  }
   console.log(parts.join(' '))
 }
 
