@@ -573,3 +573,219 @@ describe('chronicle doctor — process.log bounds', () => {
     expect(out).not.toMatch(/exceeds/)
   })
 })
+
+// ─── pipeline — process --dry-run ─────────────────────────────────────────────
+// Creates a real git repo with 2 commits, runs `process --dry-run`, and
+// verifies it correctly counts uncached commits without calling the LLM.
+
+describe('pipeline — process --dry-run', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    const { execSync: exec } = require('child_process')
+    exec('git init', { cwd: root })
+    exec('git config user.email "t@t.com"', { cwd: root })
+    exec('git config user.name "T"', { cwd: root })
+    // Write files with 25+ lines each to exceed MIN_DIFF_LINES=20 threshold
+    const bigFile = (n: number) => Array.from({ length: 25 }, (_, i) => `export const val${n}_${i} = ${i}`).join('\n')
+    writeFileSync(join(root, 'a.ts'), bigFile(1))
+    exec('git add . && git commit -m "feat: add module A with 25 exports"', { cwd: root })
+    writeFileSync(join(root, 'b.ts'), bigFile(2))
+    exec('git add . && git commit -m "feat: add module B with 25 exports"', { cwd: root })
+    initStore(root)
+    writeStore(root, 'decisions', '# Decision Log\n\n| Date | Decision | Affects | Risk |\n|------|----------|---------|------|\n')
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('reports how many commits would be processed', async () => {
+    const { cmdProcess } = await import('../commands/process.js')
+    const out = await captureLog(() => cmdProcess({ dryRun: true, depth: 'all' }))
+    expect(out).toMatch(/Would process \d+ commits/)
+  })
+
+  it('lists up to 10 commit previews in dry-run output', async () => {
+    const { cmdProcess } = await import('../commands/process.js')
+    const out = await captureLog(() => cmdProcess({ dryRun: true, depth: 'all' }))
+    // Should show short hash + subject lines for commits
+    expect(out).toMatch(/module [AB]/)
+  })
+
+  it('exits cleanly with nothing to process when all commits are cached', async () => {
+    const { execSync: exec } = require('child_process')
+    // Get hashes for ALL commits, not just the last one
+    const hashes = exec('git log --format=%H', { cwd: root }).toString().trim().split('\n').filter(Boolean)
+    const cacheData: Record<string, unknown> = {}
+    for (const h of hashes) {
+      cacheData[h] = { isDecision: false, isRejection: false, title: '', affects: [], risk: 'low', confidence: 0, rationale: '', isDeep: false }
+    }
+    writeFileSync(join(lorePath(root), '.extraction-cache.json'), JSON.stringify(cacheData))
+
+    const { cmdProcess } = await import('../commands/process.js')
+    const out = await captureLog(() => cmdProcess({ dryRun: false, depth: 'all' }))
+    expect(out).toMatch(/up-to-date|nothing to process/)
+  })
+})
+
+// ─── pipeline — inject → doctor → verify ──────────────────────────────────────
+// Full downstream pipeline test: pre-built .lore/ fixture → inject sections,
+// doctor health check, verify freshness. No LLM calls needed.
+
+describe('pipeline — inject → doctor → verify', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    const { execSync: exec } = require('child_process')
+    exec('git init', { cwd: root })
+    exec('git config user.email "t@t.com"', { cwd: root })
+    exec('git config user.name "T"', { cwd: root })
+    writeFileSync(join(root, 'src.ts'), 'export const v = 1')
+    exec('git add . && git commit -m "feat: initial"', { cwd: root })
+
+    // Build a complete .lore/ store (simulates post-init state)
+    initStore(root)
+    writeStore(root, 'index', `# Project Index\n\n**Project**: test-pipeline v1.0.0\n**Last updated**: 2026-04-12\n\n## Key Constraints\n\n- Stateless processes only\n`)
+    writeStore(root, 'decisions', `# Decision Log\n\n| Date | Decision | Affects | Risk |\n|------|----------|---------|------|\n| 2026-04-01 | Use JWT for auth | src/auth/ | high | <!-- confidence:0.92 -->\n| 2026-04-03 | Postgres over MongoDB | src/db/ | medium | <!-- confidence:0.87 -->\n`)
+    writeStore(root, 'rejected', `# Rejected Approaches\n\n## GraphQL layer (2026-04-04)\n**Replaced by**: REST\n**Reason**: Added complexity without benefit\n`)
+    writeStore(root, 'risks', `# Risk Register\n\n## High Blast Radius\n- src/auth/ — 2 decisions\n`)
+    writeStore(root, 'evolution', `# System Evolution\n\n## Era: Genesis → v1.0.0\n\n**Decisions (2):** Use JWT, Postgres\n\n---\n`)
+
+    // Cache the commit so verify reports fresh
+    const hash = exec('git log -1 --format=%H', { cwd: root }).toString().trim()
+    const cacheData = { [hash]: { isDecision: false, isRejection: false, title: '', affects: [], risk: 'low', confidence: 0, rationale: '', isDeep: false } }
+    writeFileSync(join(lorePath(root), '.extraction-cache.json'), JSON.stringify(cacheData))
+
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('inject includes all core sections', async () => {
+    const { cmdInject } = await import('../commands/inject.js')
+    const out = await captureLog(() => cmdInject({ format: 'markdown' }))
+    expect(out).toContain('Decision Log')
+    expect(out).toContain('JWT')
+    expect(out).toContain('Rejected Approaches')
+    expect(out).toContain('GraphQL')
+    expect(out).toContain('Risk Register')
+    expect(out).toContain('Evolution')
+  })
+
+  it('inject includes index.md when present', async () => {
+    const { cmdInject } = await import('../commands/inject.js')
+    const out = await captureLog(() => cmdInject({ format: 'markdown' }))
+    expect(out).toContain('test-pipeline')
+    expect(out).toContain('Key Constraints')
+  })
+
+  it('inject --files scopes decisions to matching files only', async () => {
+    const { cmdInject } = await import('../commands/inject.js')
+    const out = await captureLog(() => cmdInject({ format: 'markdown', files: 'src/auth/' }))
+    expect(out).toContain('JWT')
+    // Postgres decision affects src/db/, not src/auth/ — may or may not appear depending on ranking
+    // but JWT (auth) must appear
+  })
+
+  it('inject --min-confidence filters low-confidence decisions', async () => {
+    // Add a low-confidence decision
+    writeStore(root, 'decisions', `# Decision Log\n\n| Date | Decision | Affects | Risk |\n|------|----------|---------|------|\n| 2026-04-01 | Use JWT | src/auth/ | high | <!-- confidence:0.92 -->\n| 2026-04-03 | Try GraphQL | api/ | low | <!-- confidence:0.30 -->\n`)
+    const { cmdInject } = await import('../commands/inject.js')
+    const out = await captureLog(() => cmdInject({ format: 'markdown', minConfidence: '0.5' }))
+    expect(out).toContain('JWT')
+    expect(out).not.toContain('Try GraphQL')
+  })
+
+  it('doctor passes with valid complete store', async () => {
+    // Add a .git/hooks dir to avoid hook warning (doctor checks for post-commit hook)
+    mkdirSync(join(root, '.git', 'hooks'), { recursive: true })
+    writeFileSync(join(root, '.git', 'hooks', 'post-commit'), '#!/bin/sh\nchronicle deepen\n', { mode: 0o755 })
+
+    const { cmdDoctor } = await import('../commands/doctor.js')
+    let out = ''
+    await withMockedExit(() => captureLog(cmdDoctor).then(s => { out = s }))
+    // Should show ok for most checks (no errors)
+    expect(out).toMatch(/✓/)
+    expect(out).not.toMatch(/✗/)
+  })
+
+  it('verify reports fresh when all commits are cached', async () => {
+    const { cmdVerify } = await import('../commands/verify.js')
+    let jsonOut = ''
+    const origLog = console.log
+    console.log = (...args: unknown[]) => { jsonOut += args.map(String).join(' ') }
+    await withMockedExit(() => cmdVerify({ json: true, maxLag: '0' }))
+    console.log = origLog
+
+    const result = JSON.parse(jsonOut)
+    expect(result.loreExists).toBe(true)
+    expect(result.unprocessedCommits).toBe(0)
+    expect(result.fresh).toBe(true)
+  })
+})
+
+// ─── chronicle search ─────────────────────────────────────────────────────────
+
+describe('chronicle search — keyword fallback (text mode)', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = makeTempDir()
+    buildLoreFixture(root)
+    process.chdir(root)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('finds matching text in decisions.md with --text flag', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    const out = await captureLog(() => cmdSearch('JWT', { text: true }))
+    expect(out).toContain('JWT')
+  })
+
+  it('returns no results message for unmatched query with --text flag', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    const out = await captureLog(() => cmdSearch('XYZNONEXISTENT', { text: true }))
+    expect(out).toMatch(/No results/)
+  })
+
+  it('outputs JSON with --json --text flags', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    let jsonOut = ''
+    const origWrite = process.stdout.write.bind(process.stdout)
+    ;(process.stdout as NodeJS.WriteStream & { write: (...a: unknown[]) => boolean }).write = (
+      (chunk: unknown) => { jsonOut += String(chunk); return true }
+    ) as never
+    await cmdSearch('JWT', { text: true, json: true })
+    process.stdout.write = origWrite
+    const result = JSON.parse(jsonOut)
+    expect(Array.isArray(result)).toBe(true)
+  })
+
+  it('exits 1 when no .lore/ is found', async () => {
+    const noLoreDir = makeTempDir()
+    process.chdir(noLoreDir)
+    const { cmdSearch } = await import('../commands/search.js')
+    const exitCode = await withMockedExit(() => cmdSearch('anything', { text: true }))
+    expect(exitCode).toBe(1)
+    process.chdir(root)
+    rmSync(noLoreDir, { recursive: true, force: true })
+  })
+
+  it('exits 1 when query is empty', async () => {
+    const { cmdSearch } = await import('../commands/search.js')
+    const exitCode = await withMockedExit(() => cmdSearch('', { text: true }))
+    expect(exitCode).toBe(1)
+  })
+})

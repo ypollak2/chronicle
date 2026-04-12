@@ -6,7 +6,7 @@ import { findLoreRoot, lorePath, semanticSearch } from '@chronicle/core'
 
 export async function cmdSearch(
   query: string,
-  opts: { limit?: string; json?: boolean; semantic?: boolean; hybrid?: boolean; reindex?: boolean }
+  opts: { limit?: string; json?: boolean; text?: boolean; semantic?: boolean; hybrid?: boolean; reindex?: boolean }
 ) {
   const root = findLoreRoot()
   if (!root) {
@@ -21,25 +21,22 @@ export async function cmdSearch(
 
   const limit = opts.limit ? parseInt(opts.limit, 10) : 20
 
-  // ── Semantic / hybrid mode ───────────────────────────────────────────────
-  if (opts.semantic || opts.hybrid) {
+  // ── Semantic / hybrid mode (default unless --text) ───────────────────────
+  // Hybrid search is tried by default; falls back to keyword if transformers
+  // are not installed (semanticSearch returns null).
+  if (!opts.text) {
+    const isHybrid = opts.hybrid || (!opts.semantic)  // default = hybrid
     const spinner = process.stderr.isTTY
     if (spinner) process.stderr.write(chalk.dim('  Computing embeddings…\r'))
 
     const semResults = await semanticSearch(root, query, {
       topN: limit,
-      hybrid: opts.hybrid,
+      hybrid: isHybrid,
     })
 
     if (spinner) process.stderr.write('                         \r')
 
-    if (semResults === null) {
-      process.stderr.write(chalk.yellow(
-        '⚠  Semantic search unavailable — install @huggingface/transformers:\n' +
-        '   npm install @huggingface/transformers\n'
-      ))
-      // Fall through to keyword search
-    } else {
+    if (semResults !== null) {
       if (opts.json) {
         process.stdout.write(JSON.stringify(semResults, null, 2))
         return
@@ -48,7 +45,7 @@ export async function cmdSearch(
         console.log(chalk.yellow(`No semantic results for "${query}"`))
         return
       }
-      const mode = opts.hybrid ? 'hybrid' : 'semantic'
+      const mode = opts.semantic ? 'semantic' : 'hybrid'
       console.log(chalk.bold(`\n◆ Search (${mode}): "${query}" — ${semResults.length} result(s)\n`))
       for (const r of semResults) {
         const pct = Math.round(r.score * 100)
@@ -59,9 +56,10 @@ export async function cmdSearch(
       }
       return
     }
+    // semanticSearch returned null → transformers not installed, fall through to keyword
   }
 
-  // ── Keyword (default) mode ───────────────────────────────────────────────
+  // ── Keyword mode (--text flag, or semantic unavailable) ──────────────────
   const loreDir = lorePath(root)
   const pattern = new RegExp(query, 'gi')
   const results: SearchResult[] = []

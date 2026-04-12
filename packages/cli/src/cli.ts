@@ -73,6 +73,7 @@ program
   .description('Full-text search across .lore/ knowledge base')
   .option('--limit <n>', 'max results', '20')
   .option('--json', 'output results as JSON')
+  .option('--text', 'force keyword-only search (skip semantic)')
   .option('--semantic', 'vector similarity search (requires @huggingface/transformers)')
   .option('--hybrid', 'blend semantic + keyword scores (α=0.7 semantic)')
   .action(cmdSearch)
@@ -207,6 +208,7 @@ program
   .option('--llm <provider>', 'LLM provider: auto|anthropic|openai|gemini|ollama', 'auto')
   .option('--from-commit <hash>', 'only process commits after this hash (e.g. github.event.before)')
   .option('--dry-run', 'show what would be processed without making changes')
+  .option('--min-confidence <n>', 'min confidence for decisions.md (0.0–1.0, default: 0.5); lower results go to low-confidence.md')
   .action(cmdProcess)
 
 // Internal commands (called by hooks/git, not for direct use)
