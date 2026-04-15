@@ -6,6 +6,26 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.4] — 2026-04-15
+
+### Added
+
+**Claude Code integration — eliminate per-session context loss**
+- `chronicle setup --tool=claude-code` now registers Chronicle as an MCP server and adds SessionStart hook
+- `.claude/mcp.json` created with `chronicle mcp` server definition
+- `.claude/settings.json` created with `chronicle inject --format=markdown` SessionStart hook
+- Global hook also added to `~/.claude/settings.json` — auto-injects `.lore/` decisions in every project
+- Ensures all 35+ documented architectural decisions available at session start, no knowledge loss between Claude Code invocations
+
+### Fixed
+
+**Duplicate hook cleanup**
+- Removed duplicate system Python hooks (`python3 /path/to/hook.py`) in favor of venv versions
+- Fixes "2 dashboards" issue where llm-router hooks ran twice per session
+- Impact: cleaner hook execution, eliminates redundant model invocations
+
+---
+
 ## [1.0.3] — 2026-04-12
 
 ### Fixed
